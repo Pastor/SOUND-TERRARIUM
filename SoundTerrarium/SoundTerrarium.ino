@@ -1,3 +1,4 @@
+// v108bs: Save Wi-Fi credentials only after a successful connection and add saved-network removal.
 // v108br: v108bq final cleanup; remove retired UFO rescue angle constants and write-only rescue hold state.
 // v108as: explicitly configure BMI270 accelerometer for Bosch step-counter feature (100 Hz, AVG4, +/-2 g).
 // v96 pale young-grass day ground + EQ outline synced to text ink: coarse/stable tilt, screen-space world tilt, near-edge return window,
@@ -3293,26 +3294,17 @@ void startWiFiSetupPortalNonBlocking(){
       int n=WiFi.scanNetworks(false,true,false,300);
 
       String h=
-        "<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>SOUND TERRARIUM - Wi-Fi SETUP</title>"
-        "<style>body{font-family:sans-serif;max-width:520px;margin:24px auto;padding:0 14px}"
-        "input,select,button{font-size:18px;width:100%;box-sizing:border-box;padding:10px;margin:5px 0 14px}"
-        ".brand{margin-bottom:22px}.brand h1{font-size:25px;margin:0 0 2px}.tag{font-size:14px;font-style:italic;color:#666}"
-        ".setup{font-size:20px;font-weight:700;margin-top:10px}.note{font-size:14px;color:#555}</style>"
-        "<div class='brand'><h1>SOUND TERRARIUM</h1>"
-        "<div class='tag'>inspired by retro arcade</div>"
-        "<div class='setup'>Wi-Fi SETUP</div></div>";
+        "<meta name='viewport' content='width=device-width'><title>Wi-Fi SETUP</title>"
+        "<h1>SOUND TERRARIUM</h1><h2>Wi-Fi SETUP</h2>";
 
       h += "<p><b>Location:</b> " + locationName + "</p>";
 
       h += "<p><b>Saved Wi-Fi:</b></p><ol>";
       for(int slot=0;slot<WIFI_SLOT_COUNT;slot++){
         String ss,pp;
-        if(readWiFiSlot(slot,ss,pp)){
-          h += "<li>" + ss + "</li>";
-        }
+        if(readWiFiSlot(slot,ss,pp)) h += "<li>" + ss + "</li>";
       }
-      h += "</ol>";
+      h += "</ol><form method='POST' action='/forget'><button>FORGET ALL</button></form>";
 
       h += "<form method='POST' action='/save'>"
            "Wi-Fi network<br><select name='s'>";
@@ -3340,16 +3332,15 @@ void startWiFiSetupPortalNonBlocking(){
              + "</option>";
       }
 
-      h += "</select>"
+      h += "</select><br>"
            "Password<br><input name='p' type='password' maxlength='63' value='' "
-           "placeholder='Leave blank to keep saved password' autocomplete='new-password'><br>"
-           "Location (city)<br><input name='city' maxlength='80' value='' placeholder='e.g. New York, London, Tokyo'><br>"
+           "placeholder='Blank keeps saved password'><br>"
+           "Location (city)<br><input name='city' maxlength='80' placeholder='e.g. Tokyo'><br>"
            "<button type='submit'>SAVE & CONNECT</button>"
-           "</form>"
-           "<p class='note'>Select your Wi-Fi from the list. Saved passwords are never displayed. "
-           "Leave Password blank when reconnecting to an already saved network.</p>";
+           "</form>";
 
       WiFi.scanDelete();
+      wifiSetupServer.sendHeader("Cache-Control","no-store");
       wifiSetupServer.send(200,"text/html",h);
     });
 
@@ -3370,11 +3361,9 @@ void startWiFiSetupPortalNonBlocking(){
         return;
       }
 
-      saveSoundRunnerWiFi(newSsid,newPass);
-
       wifiSetupServer.send(200,"text/html",
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<h2>Saved.</h2><p>Testing connection now. Watch the Cardputer status box.</p>");
+        "<h2>Testing...</h2><p>This page will not update. Check the Cardputer's own screen (bottom-left) in about 20 seconds: it will show the network name if connected, or WiFi SETUP again if it failed.</p>");
 
       // Defer all slow work until after this HTTP response has returned.
       pendingSetupSsid=newSsid;
@@ -3384,6 +3373,17 @@ void startWiFiSetupPortalNonBlocking(){
       pendingSetupStartedMs=0;
       pendingSetupResponseSentMs=millis();
       pendingLocationChanged=false;
+    });
+
+    wifiSetupServer.on("/forget",HTTP_POST,[](){
+      wifiPrefs.begin("srwifi",false);
+      wifiPrefs.clear();
+      wifiPrefs.end();
+      WiFi.disconnect(false,true); // Also erase any IDF-level Wi-Fi NVS entry left by a build prior to WiFi.persistent(false).
+      wifiSetupServer.send(200,"text/html",
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<meta http-equiv='refresh' content='1;url=/'>"
+        "<h2>Wi-Fi cleared.</h2><a href='/'>Back</a>");
     });
 
     handlersRegistered=true;
@@ -3606,6 +3606,8 @@ static void servicePendingWiFiSetup(){
   if(pendingSetupStage==PSET_WAIT_WIFI){
     if(WiFi.status()==WL_CONNECTED){
       wifiOK=true;
+      // Commit credentials only after the access point accepted them.
+      saveSoundRunnerWiFi(pendingSetupSsid,pendingSetupPass);
       int savedSlot=-1;
       String savedPassCheck;
       if(findSavedWiFi(pendingSetupSsid,savedPassCheck,savedSlot) && savedSlot>=0){
@@ -3660,16 +3662,7 @@ static void servicePendingWiFiSetup(){
   }
 
   if(pendingSetupStage==PSET_DONE){
-    if(pendingLocationChanged && wifiOK){
-      struct tm refreshedLocal;
-      localNow(refreshedLocal);
-      
-
-
-
-
-    }
-
+    bool connectionFailed=!wifiOK;
     pendingSetupStage=PSET_IDLE;
     pendingSetupSsid="";
     pendingSetupPass="";
@@ -3677,12 +3670,16 @@ static void servicePendingWiFiSetup(){
     pendingSetupStartedMs=0;
     pendingSetupResponseSentMs=0;
     pendingLocationChanged=false;
+    // A failed candidate was never saved. Reopen setup so the user can retry
+    // or remove an older bad entry without reflashing the device.
+    if(connectionFailed) startWiFiSetupPortalNonBlocking();
     return;
   }
 }
 
 void setup(){
   Serial.begin(115200);
+  WiFi.persistent(false); // Keep candidate/failed credentials in RAM only; app owns "srwifi" as the single source of truth.
   delay(200);
   
   delay(100);

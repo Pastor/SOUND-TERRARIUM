@@ -272,6 +272,12 @@ location field is left blank, the previously saved location is retained.
 SOUND TERRARIUM can store **up to five Wi-Fi networks** and attempts to
 connect to a saved network that is available.
 
+New or updated Wi-Fi credentials are first tested and are stored only after a
+successful connection. If the connection fails, the candidate password is not
+saved or allowed to overwrite an existing credential, and the setup access
+point starts again so the user can retry. The setup page also provides a
+**FORGET ALL** button for clearing the saved Wi-Fi networks.
+
 While the setup screen is open, the bottom of the Cardputer display
 shows:
 
@@ -279,7 +285,9 @@ shows:
 
 Press any physical key to cancel setup and return to normal operation.
 
-> Saved Wi-Fi passwords are not displayed on the setup page.
+> Saved Wi-Fi passwords are not displayed on the setup page. Leaving the
+> password field blank for a saved network reuses its stored password; an open
+> network may use an empty password.
 
 ------------------------------------------------------------------------
 
@@ -431,9 +439,9 @@ includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
 with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
 saved Wi-Fi reconnection, and the temperature-responsive runner.
 
-**SOUND TERRARIUM v108br is now published on M5Burner** for the Cardputer and
-can be found by searching for `SOUND TERRARIUM`. Its M5Burner merged firmware
-image has been flashed and tested successfully on a real Cardputer ADV.
+**SOUND TERRARIUM v108bs includes the Wi-Fi credential safety update.**
+For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The M5Burner merged
+firmware image should be tested on a real Cardputer ADV before publication.
 
 Automatic mirroring from M5Burner to the M5Launcher OTA catalog may take a few
 hours. Until the entry appears in M5Launcher, use M5Burner or install
