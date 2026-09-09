@@ -12,6 +12,8 @@ A tiny runner lives inside it.**
 
 ▶ **[TRY THE WEB VERSION](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/)**
 
+**Works on desktop, iPhone, and Android. Allow microphone access; on phones, use the on-screen touch controls.**
+
 🎬 **[WATCH THE DEMO](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/SOUND_TERRARIUM_demo.mp4)**
 
 **MAKE YOUR OWN SOUND TERRARIUM.**  
