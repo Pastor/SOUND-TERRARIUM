@@ -1,3 +1,4 @@
+// v108bt: keep WebServer; harden lightweight JSON parsing and restore original v108bt battery monitor behavior.
 // v108bs: Save Wi-Fi credentials only after a successful connection and add saved-network removal.
 // v108br: v108bq final cleanup; remove retired UFO rescue angle constants and write-only rescue hold state.
 // v108as: explicitly configure BMI270 accelerometer for Bosch step-counter feature (100 Hz, AVG4, +/-2 g).
@@ -79,12 +80,12 @@
     Board: M5Cardputer
     M5GFX >= 0.2.10
 
-  v1.5 deliberately DOES NOT include M5Cardputer/M5Unified.
+  v108bt uses M5Cardputer/M5Unified and browser-based Wi-Fi/location setup.
   The LCD is initialized directly with M5GFX so M5Unified never owns I2S0.
 
   IMPORTANT SETUP:
-    Set WIFI_SSID / WIFI_PASS.
-    Set LATITUDE / LONGITUDE and TZ_INFO for the place where the clock is used.
+    Configure Wi-Fi from the built-in browser-based Wi-Fi SETUP.
+    Set Location (city) from the Wi-Fi SETUP page; coordinates and timezone are resolved automatically.
     Open-Meteo itself is worldwide; these are only the user's location settings.
 */
 
@@ -96,10 +97,8 @@
 #include <Wire.h>
 #include "driver/i2s_std.h"
 #include <WiFi.h>
-#include <ArduinoJson.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
-#include <WiFiClientSecure.h>
 #include <Preferences.h>
 #include <time.h>
 #include <sys/time.h>
@@ -185,7 +184,6 @@ static uint32_t imuLastReadMs=0;
 // so SOUND TERRARIUM adds the current boot delta to a small persisted daily base.
 static bool stepCounterReady=false;
 static uint32_t stepRawOrigin=0;
-static uint32_t stepDiagLastMs=0;
 static constexpr uint32_t STEP_DIAG_MS=1000UL;
 static uint32_t stepPersistedBase=0;
 static uint32_t stepToday=0;
@@ -401,16 +399,6 @@ void connectWiFi(bool allowSetup=true);
 static void startWiFiRetryNonBlocking();
 static void serviceWiFiRetryNonBlocking();
 
-const char* netStageText(){
-  switch(netStage){
-    case NET_CONNECTING: return "WiFi CONNECTING";
-    case NET_WIFI_OK:    return "WiFi OK / NTP...";
-    case NET_NTP_OK:     return "WiFi OK / TIME OK";
-    case NET_NTP_FAIL:   return "WiFi OK / NTP FAIL";
-    case NET_SETUP:      return "WiFi SETUP";
-    default:             return "WiFi OFF";
-  }
-}
 
 static const char* SETUP_AP_SSID="SOUND-TERRARIUM-SETUP";
 
@@ -440,7 +428,6 @@ static constexpr uint32_t EPHEMERIS_RETRY_MS = 60UL*60UL*1000UL;
 static int ephemerisDateKey = 0;
 
 bool weatherOK = false;
-int lastHttpCode = 0;
 
 // v97 solar schedule. Open-Meteo returns local sunrise/sunset when timezone=auto.
 // If no online value has ever been stored, fall back to 06:00 / 18:00.
@@ -473,7 +460,6 @@ static int16_t audioBuf[AUDIO_N];
 static bool micReady = false;
 static bool audioPrimed = false;
 static int16_t rawPeak = 0;
-static bool recordEverSucceeded = false;
 
 float smoothCentroid = 420.0f; // HTML-range centroid baseline
 float smoothRms = 0.0f;
@@ -554,11 +540,6 @@ int displayGroundAt(int x){
   x=clampi(x,0,W-1);
   float dy=tanf(imuTiltDisplayDeg*PI/180.0f)*(x-W*0.5f);
   return clampi((int)roundf(rawGroundAt(x)+dy),TERRAIN_HIGH,TERRAIN_BOTTOM);
-}
-
-float worldAdvancePixels(){
-  // updateRunner() is called once for every terrain pixel actually shifted.
-  return 1.0f;
 }
 
 // Tint only white sprite pixels; saved/offline weather never activates tint.
@@ -703,20 +684,179 @@ WeatherMode modeFromWMO(int code){
   return WX_DEFAULT;
 }
 
-bool extractJsonNumber(const String &s,const char* key,float &out){
-  String token=String("\"")+key+"\":";
-  int p=s.indexOf(token);
-  if(p<0) return false;
-  p += token.length();
-  int e=p;
-  while(e<(int)s.length()){
-    char c=s[e];
-    if((c>='0'&&c<='9') || c=='-' || c=='.') e++;
-    else break;
+// Lightweight JSON helpers for the fixed Open-Meteo responses used here.
+// They avoid linking a general-purpose JSON DOM parser into the firmware.
+static bool jsonIsWs(char c){
+  return c==' ' || c=='\t' || c=='\r' || c=='\n';
+}
+
+// Find a named value while tolerating JSON whitespace around the colon.
+// Optional 'to' bounds the search to one already-identified JSON container.
+static int jsonValuePos(const String &s,const char* key,int from=0,int to=-1){
+  const int len=(int)s.length();
+  if(to<0 || to>len) to=len;
+  if(from<0) from=0;
+  if(from>=to) return -1;
+  String token=String("\"")+key+"\"";
+  int p=from;
+  while((p=s.indexOf(token,p))>=0 && p<to){
+    int q=p+token.length();
+    while(q<to && jsonIsWs(s[q])) q++;
+    if(q<to && s[q]==':'){
+      q++;
+      while(q<to && jsonIsWs(s[q])) q++;
+      return q<to ? q : -1;
+    }
+    p+=token.length();
   }
-  if(e<=p) return false;
-  out=s.substring(p,e).toFloat();
+  return -1;
+}
+
+static int jsonMatchingClose(const String &s,int openPos,char openCh,char closeCh,int to=-1){
+  const int len=(int)s.length();
+  if(to<0 || to>len) to=len;
+  if(openPos<0 || openPos>=to || s[openPos]!=openCh) return -1;
+  int depth=0;
+  bool inString=false,esc=false;
+  for(int i=openPos;i<to;i++){
+    char c=s[i];
+    if(inString){
+      if(esc){ esc=false; continue; }
+      if(c=='\\'){ esc=true; continue; }
+      if(c=='\"') inString=false;
+      continue;
+    }
+    if(c=='\"'){ inString=true; continue; }
+    if(c==openCh) depth++;
+    else if(c==closeCh && --depth==0) return i;
+  }
+  return -1;
+}
+
+static bool jsonObjectScope(const String &s,const char* key,int &from,int &to,int searchFrom=0,int searchTo=-1){
+  int p=jsonValuePos(s,key,searchFrom,searchTo);
+  if(p<0 || p>=(int)s.length() || s[p]!='{') return false;
+  int e=jsonMatchingClose(s,p,'{','}',searchTo);
+  if(e<0) return false;
+  from=p+1;
+  to=e;
   return true;
+}
+
+static bool jsonFirstObjectInArrayScope(const String &s,const char* key,int &from,int &to,int searchFrom=0,int searchTo=-1){
+  int p=jsonValuePos(s,key,searchFrom,searchTo);
+  const int limit=(searchTo<0 || searchTo>(int)s.length()) ? (int)s.length() : searchTo;
+  if(p<0 || p>=limit || s[p]!='[') return false;
+  p++;
+  while(p<limit && jsonIsWs(s[p])) p++;
+  if(p>=limit || s[p]!='{') return false;
+  int e=jsonMatchingClose(s,p,'{','}',limit);
+  if(e<0) return false;
+  from=p+1;
+  to=e;
+  return true;
+}
+
+static bool jsonNumber(const String &s,const char* key,double &out,int from=0,int to=-1){
+  int p=jsonValuePos(s,key,from,to);
+  const int limit=(to<0 || to>(int)s.length()) ? (int)s.length() : to;
+  if(p<0 || p>=limit || s.startsWith("null",p)) return false;
+  const char* base=s.c_str();
+  char* e=nullptr;
+  out=strtod(base+p,&e);
+  return e && e>base+p && (int)(e-base)<=limit;
+}
+
+static bool jsonString(const String &s,const char* key,String &out,int from=0,int to=-1){
+  int p=jsonValuePos(s,key,from,to);
+  const int limit=(to<0 || to>(int)s.length()) ? (int)s.length() : to;
+  if(p<0 || p>=limit || s[p]!='\"') return false;
+  p++;
+  out="";
+  while(p<limit){
+    char c=s[p++];
+    if(c=='\"') return true;
+    if(c!='\\'){ out+=c; continue; }
+    if(p>=limit) return false;
+    c=s[p++];
+    if(c=='u'){
+      if(p+4>limit) return false;
+      uint32_t cp=0;
+      for(int i=0;i<4;i++){
+        char h=s[p++];
+        uint8_t v=(h>='0'&&h<='9')?h-'0':(h>='a'&&h<='f')?h-'a'+10:(h>='A'&&h<='F')?h-'A'+10:255;
+        if(v>15) return false;
+        cp=(cp<<4)|v;
+      }
+      if(cp>=0xD800 && cp<=0xDBFF && p+6<=limit && s[p]=='\\' && s[p+1]=='u'){
+        int q=p+2; uint32_t lo=0; bool ok=true;
+        for(int i=0;i<4;i++){
+          char h=s[q++];
+          uint8_t v=(h>='0'&&h<='9')?h-'0':(h>='a'&&h<='f')?h-'a'+10:(h>='A'&&h<='F')?h-'A'+10:255;
+          if(v>15){ ok=false; break; }
+          lo=(lo<<4)|v;
+        }
+        if(ok && lo>=0xDC00 && lo<=0xDFFF){ cp=0x10000+((cp-0xD800)<<10)+(lo-0xDC00); p=q; }
+      }
+      if(cp<=0x7F) out+=(char)cp;
+      else if(cp<=0x7FF){ out+=(char)(0xC0|(cp>>6)); out+=(char)(0x80|(cp&0x3F)); }
+      else if(cp<=0xFFFF){ out+=(char)(0xE0|(cp>>12)); out+=(char)(0x80|((cp>>6)&0x3F)); out+=(char)(0x80|(cp&0x3F)); }
+      else { out+=(char)(0xF0|(cp>>18)); out+=(char)(0x80|((cp>>12)&0x3F)); out+=(char)(0x80|((cp>>6)&0x3F)); out+=(char)(0x80|(cp&0x3F)); }
+    }else{
+      switch(c){
+        case '\"': out+='\"'; break; case '\\': out+='\\'; break; case '/': out+='/'; break;
+        case 'b': out+='\b'; break; case 'f': out+='\f'; break; case 'n': out+='\n'; break;
+        case 'r': out+='\r'; break; case 't': out+='\t'; break; default: return false;
+      }
+    }
+  }
+  return false;
+}
+
+static bool jsonFirstStringInArray(const String &s,const char* key,String &out,int from=0,int to=-1){
+  int p=jsonValuePos(s,key,from,to);
+  const int limit=(to<0 || to>(int)s.length()) ? (int)s.length() : to;
+  if(p<0 || p>=limit || s[p]!='[') return false;
+  p++;
+  while(p<limit && jsonIsWs(s[p])) p++;
+  if(p>=limit || s.startsWith("null",p) || s[p]!='\"') return false;
+  p++;
+  int e=p;
+  bool esc=false;
+  for(;e<limit;e++){
+    char c=s[e];
+    if(esc){ esc=false; continue; }
+    if(c=='\\'){ esc=true; continue; }
+    if(c=='\"') break;
+  }
+  if(e>=limit) return false;
+  out=s.substring(p,e);
+  return true;
+}
+
+// Preserve array indexes: JSON null becomes NAN instead of being compacted out.
+static int jsonNumberArray(const String &s,const char* key,double *out,int maxN,int from=0,int to=-1){
+  int p=jsonValuePos(s,key,from,to);
+  const int limit=(to<0 || to>(int)s.length()) ? (int)s.length() : to;
+  if(p<0 || p>=limit || s[p]!='[') return 0;
+  p++;
+  int n=0;
+  const char* base=s.c_str();
+  while(p<limit && n<maxN){
+    while(p<limit && (jsonIsWs(s[p]) || s[p]==',')) p++;
+    if(p>=limit || s[p]==']') break;
+    if(s.startsWith("null",p)){
+      out[n++]=NAN;
+      p+=4;
+      continue;
+    }
+    char* e=nullptr;
+    double v=strtod(base+p,&e);
+    if(!e || e<=base+p || (int)(e-base)>limit) return 0;
+    out[n++]=v;
+    p=(int)(e-base);
+  }
+  return n;
 }
 
 void loadSavedWeather(){
@@ -797,44 +937,27 @@ bool fetchDailyEphemeris(){
   String body=http.getString();
   http.end();
 
-  JsonDocument doc;
-  DeserializationError err=deserializeJson(doc,body);
-  if(err) return false;
-
-  JsonArray sunriseArr = doc["daily"]["sunrise"].as<JsonArray>();
-  JsonArray sunsetArr  = doc["daily"]["sunset"].as<JsonArray>();
-  JsonArray moonriseArr= doc["daily"]["moonrise"].as<JsonArray>();
-  JsonArray moonsetArr = doc["daily"]["moonset"].as<JsonArray>();
-
   // Sun and Moon are deliberately independent. Open-Meteo can legitimately
-  // return a missing moonrise or moonset for a calendar day; that must not
-  // discard an otherwise valid sunrise/sunset update.
+  // return a missing moonrise or moonset for a calendar day.
   bool solarValid=false;
   bool lunarValid=false;
   int srM=0,ssM=0,mrM=0,msM=0;
-
-  if(!sunriseArr.isNull() && !sunsetArr.isNull() &&
-     sunriseArr.size()>0 && sunsetArr.size()>0){
-    String sr=sunriseArr[0].as<String>();
-    String ss=sunsetArr[0].as<String>();
+  String sr,ss,mr,ms;
+  int dailyPos=0,dailyEnd=0;
+  if(!jsonObjectScope(body,"daily",dailyPos,dailyEnd)) return false;
+  if(jsonFirstStringInArray(body,"sunrise",sr,dailyPos,dailyEnd) && jsonFirstStringInArray(body,"sunset",ss,dailyPos,dailyEnd)){
     solarValid=parseIsoLocalMinutes(sr.c_str(),srM) &&
-               parseIsoLocalMinutes(ss.c_str(),ssM) &&
-               srM!=ssM;
+               parseIsoLocalMinutes(ss.c_str(),ssM) && srM!=ssM;
   }
-
-  if(!moonriseArr.isNull() && !moonsetArr.isNull() &&
-     moonriseArr.size()>0 && moonsetArr.size()>0){
-    String mr=moonriseArr[0].as<String>();
-    String ms=moonsetArr[0].as<String>();
+  if(jsonFirstStringInArray(body,"moonrise",mr,dailyPos,dailyEnd) && jsonFirstStringInArray(body,"moonset",ms,dailyPos,dailyEnd)){
     lunarValid=parseIsoLocalMinutes(mr.c_str(),mrM) &&
-               parseIsoLocalMinutes(ms.c_str(),msM) &&
-               mrM!=msM;
+               parseIsoLocalMinutes(ms.c_str(),msM) && mrM!=msM;
   }
-
   if(!solarValid && !lunarValid) return false;
 
-  if(!doc["utc_offset_seconds"].isNull()){
-    localUtcOffsetSeconds=doc["utc_offset_seconds"].as<int32_t>();
+  double off=0;
+  if(jsonNumber(body,"utc_offset_seconds",off)){
+    localUtcOffsetSeconds=(int32_t)off;
     prefs.putInt("utcoff",localUtcOffsetSeconds);
   }
 
@@ -912,7 +1035,6 @@ void fetchWeather(){
   lastWeatherAttempt=nowMs;
 
   weatherOK=false;
-  lastHttpCode=0;
 
   HTTPClient http;
   String url =
@@ -931,7 +1053,6 @@ void fetchWeather(){
   }
 
   int code=http.GET();
-  lastHttpCode=code;
 
   if(code!=HTTP_CODE_OK){
     http.end();
@@ -941,33 +1062,29 @@ void fetchWeather(){
   String body=http.getString();
   http.end();
 
-  JsonDocument doc;
-  DeserializationError err=deserializeJson(doc,body);
-  if(err){
-    return;
-  }
-
-  JsonVariant current=doc["current"];
-  if(current.isNull() || current["weather_code"].isNull()){
-    return;
-  }
-
-  weather.code=current["weather_code"].as<int>();
-  weather.cloud=current["cloud_cover"] | 0;
-  weather.cloud=clampi(weather.cloud,0,100);
-  weather.temperatureC=current["temperature_2m"].isNull() ? NAN : current["temperature_2m"].as<float>();
-  if(!current["relative_humidity_2m"].isNull()) weather.humidityPct=clampi(current["relative_humidity_2m"].as<int>(),0,100);
-  if(!current["pressure_msl"].isNull()) weather.pressureMslHpa=current["pressure_msl"].as<float>();
-  JsonArray popArr=doc["hourly"]["precipitation_probability"].as<JsonArray>();
-  if(!popArr.isNull() && popArr.size()>0 && !popArr[0].isNull())
-    weather.precipitationProbabilityPct=clampi(popArr[0].as<int>(),0,100);
+  // Parse only the fields SOUND TERRARIUM uses. Scope current values to
+  // the "current" object so same-named unit strings cannot be mistaken for data.
+  int currentPos=0,currentEnd=0;
+  if(!jsonObjectScope(body,"current",currentPos,currentEnd)) return;
+  double v=0;
+  if(!jsonNumber(body,"weather_code",v,currentPos,currentEnd)) return;
+  weather.code=(int)v;
+  weather.cloud=jsonNumber(body,"cloud_cover",v,currentPos,currentEnd) ? clampi((int)v,0,100) : 0;
+  weather.temperatureC=jsonNumber(body,"temperature_2m",v,currentPos,currentEnd) ? (float)v : NAN;
+  if(jsonNumber(body,"relative_humidity_2m",v,currentPos,currentEnd)) weather.humidityPct=clampi((int)v,0,100);
+  if(jsonNumber(body,"pressure_msl",v,currentPos,currentEnd)) weather.pressureMslHpa=(float)v;
+  double pop[1];
+  int hourlyPos=0,hourlyEnd=0;
+  if(jsonObjectScope(body,"hourly",hourlyPos,hourlyEnd) &&
+     jsonNumberArray(body,"precipitation_probability",pop,1,hourlyPos,hourlyEnd)>0 && isfinite(pop[0]))
+    weather.precipitationProbabilityPct=clampi((int)pop[0],0,100);
   weather.mode=modeFromWMO(weather.code);
   weather.online=true;
   weather.updatedMs=millis();
 
   // Keep the timezone offset fresh from the weather response as well.
-  if(!doc["utc_offset_seconds"].isNull()){
-    localUtcOffsetSeconds=doc["utc_offset_seconds"].as<int32_t>();
+  if(jsonNumber(body,"utc_offset_seconds",v)){
+    localUtcOffsetSeconds=(int32_t)v;
     prefs.putInt("utcoff",localUtcOffsetSeconds);
   }
 
@@ -1007,11 +1124,13 @@ static bool fetchTides(){
   String body=http.getString();
   http.end();
 
-  JsonDocument doc;
-  if(deserializeJson(doc,body)) return false;
-  JsonArray times=doc["hourly"]["time"].as<JsonArray>();
-  JsonArray levels=doc["hourly"]["sea_level_height_msl"].as<JsonArray>();
-  const int n=(int)min(times.size(),levels.size());
+  static double times[48];
+  static double levels[48];
+  int hourlyPos=0,hourlyEnd=0;
+  if(!jsonObjectScope(body,"hourly",hourlyPos,hourlyEnd)) return false;
+  int nt=jsonNumberArray(body,"time",times,48,hourlyPos,hourlyEnd);
+  int nl=jsonNumberArray(body,"sea_level_height_msl",levels,48,hourlyPos,hourlyEnd);
+  const int n=min(nt,nl);
   if(n<5) return false;
 
   const time_t now=safeEpoch();
@@ -1021,11 +1140,12 @@ static bool fetchTides(){
 
   // Determine the local trend around the present time.
   for(int i=0;i<n-1;i++){
-    if(times[i].isNull() || times[i+1].isNull() || levels[i].isNull() || levels[i+1].isNull()) continue;
-    time_t t0=(time_t)times[i].as<int64_t>();
-    time_t t1=(time_t)times[i+1].as<int64_t>();
+    if(!isfinite(times[i]) || !isfinite(times[i+1]) ||
+       !isfinite(levels[i]) || !isfinite(levels[i+1])) continue;
+    time_t t0=(time_t)times[i];
+    time_t t1=(time_t)times[i+1];
     if(now>=t0 && now<=t1){
-      rising=levels[i+1].as<float>() >= levels[i].as<float>();
+      rising=levels[i+1] >= levels[i];
       directionKnown=true;
       break;
     }
@@ -1034,11 +1154,11 @@ static bool fetchTides(){
   // Find extrema. A 3-point parabolic correction improves the time estimate
   // beyond the raw one-hour grid without inventing any additional tide model.
   for(int i=1;i<n-1;i++){
-    if(times[i-1].isNull() || times[i].isNull() || times[i+1].isNull() ||
-       levels[i-1].isNull() || levels[i].isNull() || levels[i+1].isNull()) continue;
-    const float y0=levels[i-1].as<float>();
-    const float y1=levels[i].as<float>();
-    const float y2=levels[i+1].as<float>();
+    if(!isfinite(times[i-1]) || !isfinite(times[i]) || !isfinite(times[i+1]) ||
+       !isfinite(levels[i-1]) || !isfinite(levels[i]) || !isfinite(levels[i+1])) continue;
+    const float y0=(float)levels[i-1];
+    const float y1=(float)levels[i];
+    const float y2=(float)levels[i+1];
     const bool isHigh=(y1>y0 && y1>=y2);
     const bool isLow =(y1<y0 && y1<=y2);
     if(!isHigh && !isLow) continue;
@@ -1049,7 +1169,7 @@ static bool fetchTides(){
       frac=0.5f*(y0-y2)/den;
       frac=clampf(frac,-1.0f,1.0f);
     }
-    time_t te=(time_t)times[i].as<int64_t>() + (time_t)lroundf(frac*3600.0f);
+    time_t te=(time_t)times[i] + (time_t)lroundf(frac*3600.0f);
     if(te<=now) continue;
     if(isHigh && nextHigh==0) nextHigh=te;
     if(isLow  && nextLow==0)  nextLow=te;
@@ -1395,7 +1515,6 @@ void analyzeAudio(){
 
   if(err != ESP_OK || bytesRead < sizeof(int16_t) * 64) return;
 
-  recordEverSucceeded = true;
   audioPrimed = true;
   const size_t n = bytesRead / sizeof(int16_t);
 
@@ -1479,58 +1598,7 @@ void analyzeAudio(){
   worldSpeedPxPerSec += (targetBpm-worldSpeedPxPerSec)*0.025f;
 }
 
-int centroidToGround(float hz){
-  // Kept as an absolute fallback/reference mapper.
-  const float lo=80.0f, hi=1800.0f;
-  hz=clampf(hz,lo,hi);
-  float n=logf(hz/lo)/logf(hi/lo);
-  return (int)roundf(TERRAIN_LOW - n*(TERRAIN_LOW-TERRAIN_HIGH));
-}
-
-
 // ---------------- Terrain ----------------
-float adaptiveTerrainLevel(){
-  const float c = clampf(smoothCentroid,80.0f,1800.0f);
-
-  // Fast expansion when a new low/high is actually heard.
-  // Very slow relaxation in the opposite direction lets the window follow
-  // a new song without collapsing the visible amplitude every moment.
-  if(c < centroidFloorHz) centroidFloorHz += (c-centroidFloorHz)*0.10f;
-  else                    centroidFloorHz += (c-centroidFloorHz)*0.00035f;
-
-  if(c > centroidCeilHz)  centroidCeilHz  += (c-centroidCeilHz)*0.10f;
-  else                    centroidCeilHz  += (c-centroidCeilHz)*0.00055f;
-
-  centroidFloorHz=clampf(centroidFloorHz,80.0f,1500.0f);
-  centroidCeilHz =clampf(centroidCeilHz,180.0f,1800.0f);
-
-  // Do not allow the adaptive window to become so wide that movement disappears.
-  // 220 Hz is deliberately much narrower than the full 80-1800 Hz analysis band:
-  // this is what converts the Cardputer's smaller centroid excursion into the
-  // browser-like visual excursion the user actually sees.
-  float span=centroidCeilHz-centroidFloorHz;
-  const float MIN_SPAN_HZ=220.0f;
-  if(span < MIN_SPAN_HZ) span=MIN_SPAN_HZ;
-
-  float n=(c-centroidFloorHz)/span;
-  n=clampf(n,0.0f,1.0f);
-
-  // Make mid-level changes visible instead of spending most frames near zero.
-  n=powf(n,0.78f);
-
-  // Smooth only enough to avoid one-frame spikes; retain visible musical motion.
-  // HTML-like temporal smoothing: broaden musical hills and valleys instead of
-  // turning short spectral changes into needle-like peaks.
-  // HTML-like symmetric temporal smoothing.
-  // The previous adaptive signal could fall away too quickly after a peak,
-  // making the downhill side look like a cliff.  Keep the same normalized
-  // target/range, but let both ascent and descent follow it with the same
-  // gentle inertia before the existing 0.14 spatial terrain interpolation.
-  const float HTML_SIGNAL_ALPHA = 0.075f;
-  terrainNormSmooth += (n-terrainNormSmooth)*HTML_SIGNAL_ALPHA;
-  return clampf(terrainNormSmooth,0.0f,1.0f);
-}
-
 static void updateVisibleEqTopY(){
   // This is now the single source of truth for BOTH the visible EQ and road.
   // If the displayed bar does not move, the road receives no different height.
@@ -1967,14 +2035,6 @@ static bool updateTiltPhysics(bool motionTick){
 }
 
 // ---------------- Runner mechanics ----------------
-void startClimb(){
-  runner.state=RS_CLIMB;
-  runner.stateT=0;
-  runner.climbPhase=0;
-  runner.climbStartX=runner.x;
-  runner.climbTargetY=groundAt((int)runner.x+14)-11;
-}
-
 static void updateOffscreenRunnerRescue(){
   if(!runnerLost || ufo.active) return;
 
@@ -2758,22 +2818,81 @@ static void clockRetroPalette(const struct tm &t,
 }
 
 // Cardputer ADV battery detect is GPIO10 through a 1:2 divider.
-// Keep this deliberately lightweight: raw ADC only, no calibrated millivolt API.
-// The percentage is a reference estimate, matching STEP's reference-information role.
-static int readBatteryPercent(){
-  int raw=analogRead(10);
-  // Approximate 3.30..4.20 V battery range after the 1:2 divider.
-  // With ESP32-S3 Arduino 12-bit ADC / default attenuation this corresponds
-  // roughly to raw 1689..2150. Clamp outside that range.
-  int pct=(raw-1689)*100/461;
-  return clampi(pct,0,100);
+// Do not present an unreliable percentage.  Instead expose three practical
+// states whose thresholds are deliberately conservative:
+//   OK   : normal operation
+//   LOW  : charge soon
+//   CRIT : charge now
+//
+// The raw thresholds below preserve the existing v108bs ADC scale
+// (raw 1689 ~= 3.30 V, raw 2150 ~= 4.20 V).  They are therefore initial
+// safety-oriented thresholds, not calibrated SOC measurements.
+enum BatteryState : uint8_t { BAT_OK=0, BAT_LOW=1, BAT_CRIT=2 };
+static BatteryState batteryState=BAT_OK;
+static uint32_t batteryLastSampleMs=0;
+static uint8_t batteryRecoveryCount=0;
+
+static constexpr uint32_t BAT_SAMPLE_INTERVAL_MS=5000UL;
+static constexpr int BAT_SAMPLE_COUNT=12;
+static constexpr int BAT_LOW_ENTER_RAW =1843; // ~3.60 V on the existing ADC scale
+static constexpr int BAT_LOW_EXIT_RAW  =1894; // ~3.70 V; 100 mV hysteresis
+static constexpr int BAT_CRIT_ENTER_RAW=1740; // ~3.40 V
+static constexpr int BAT_CRIT_EXIT_RAW =1791; // ~3.50 V; 100 mV hysteresis
+static constexpr uint8_t BAT_RECOVERY_CYCLES=3;
+
+static int readBatteryRawAverage(){
+  uint32_t sum=0;
+  for(int i=0;i<BAT_SAMPLE_COUNT;i++) sum+=(uint32_t)analogRead(10);
+  return (int)(sum/BAT_SAMPLE_COUNT);
+}
+
+static void serviceBatteryMonitor(){
+  uint32_t now=millis();
+  if(batteryLastSampleMs!=0 && (uint32_t)(now-batteryLastSampleMs)<BAT_SAMPLE_INTERVAL_MS) return;
+  batteryLastSampleMs=now;
+
+  int raw=readBatteryRawAverage();
+  BatteryState next=batteryState;
+
+  // Dangerous transitions happen immediately. Recovery is intentionally
+  // slower so the label does not bounce around a threshold.
+  if(batteryState==BAT_OK){
+    if(raw<=BAT_CRIT_ENTER_RAW) next=BAT_CRIT;
+    else if(raw<=BAT_LOW_ENTER_RAW) next=BAT_LOW;
+  }else if(batteryState==BAT_LOW){
+    if(raw<=BAT_CRIT_ENTER_RAW){
+      next=BAT_CRIT;
+      batteryRecoveryCount=0;
+    }else if(raw>=BAT_LOW_EXIT_RAW){
+      if(++batteryRecoveryCount>=BAT_RECOVERY_CYCLES){
+        next=BAT_OK;
+        batteryRecoveryCount=0;
+      }
+    }else{
+      batteryRecoveryCount=0;
+    }
+  }else{ // BAT_CRIT
+    if(raw>=BAT_CRIT_EXIT_RAW){
+      if(++batteryRecoveryCount>=BAT_RECOVERY_CYCLES){
+        next=(raw>=BAT_LOW_EXIT_RAW)?BAT_OK:BAT_LOW;
+        batteryRecoveryCount=0;
+      }
+    }else{
+      batteryRecoveryCount=0;
+    }
+  }
+
+  if(next!=batteryState){
+    batteryState=next;
+    batteryRecoveryCount=0;
+  }
 }
 
 void drawClockInfoOverlay(){
   // T and I are deliberately independent:
   // T = normal clock/weather text (visible by default)
   // I = maintenance/auxiliary information (hidden by default)
-  if(!showClockInfo && !showAuxInfo) return;
+  if(!showClockInfo && !showAuxInfo && batteryState==BAT_OK) return;
 
   struct tm t;
   localNow(t);
@@ -2883,11 +3002,21 @@ void drawClockInfoOverlay(){
     canvas.drawString(auxPress,174,22);
     canvas.drawString(auxPop,174,32);
 
-    // BAT sits directly below the right-side EQ and shares its left edge.
-    char batb[16];
-    snprintf(batb,sizeof(batb),"BAT %d%%",readBatteryPercent());
+  }
+
+  // BAT OK remains auxiliary information. LOW/CRIT override I and stay
+  // visible so a charging warning cannot be hidden accidentally.
+  if(showAuxInfo || batteryState!=BAT_OK){
+    const char *batText=(batteryState==BAT_CRIT)?"BAT CRIT":
+                        (batteryState==BAT_LOW)?"BAT LOW":"BAT OK";
+    uint16_t batColor=ink;
+    if(batteryState==BAT_LOW) batColor=canvas.color565(255,140,0); // orange
+    else if(batteryState==BAT_CRIT) batColor=TFT_RED;
+    canvas.setFont(&fonts::Font0);
+    canvas.setTextSize(1);
+    canvas.setTextColor(batColor);
     canvas.setTextDatum(bottom_left);
-    canvas.drawString(batb,EQ_GEN_LEFT,H-2);
+    canvas.drawString(batText,EQ_GEN_LEFT,H-2);
   }
 
   if(showClockInfo){
@@ -3210,16 +3339,15 @@ bool setLocationFromCity(const String &city){
   int code=http.GET();
   if(code!=HTTP_CODE_OK){ http.end(); return false; }
   String body=http.getString(); http.end();
-  JsonDocument doc;
-  if(deserializeJson(doc,body)) return false;
-  JsonArray results=doc["results"].as<JsonArray>();
-  if(results.isNull() || results.size()==0) return false;
-  JsonObject r=results[0].as<JsonObject>();
-  if(r["latitude"].isNull() || r["longitude"].isNull()) return false;
-  locationLatitude=r["latitude"].as<float>();
-  locationLongitude=r["longitude"].as<float>();
-  String name=r["name"] | city;
-  String country=r["country"] | "";
+  int rp=0,rEnd=0;
+  if(!jsonFirstObjectInArrayScope(body,"results",rp,rEnd)) return false;
+  double lat=0,lon=0;
+  if(!jsonNumber(body,"latitude",lat,rp,rEnd) || !jsonNumber(body,"longitude",lon,rp,rEnd)) return false;
+  locationLatitude=(float)lat;
+  locationLongitude=(float)lon;
+  String name,country;
+  if(!jsonString(body,"name",name,rp,rEnd)) name=city;
+  if(!jsonString(body,"country",country,rp,rEnd)) country="";
   locationName=name + (country.length()?", "+country:"");
   prefs.putFloat("loclat",locationLatitude);
   prefs.putFloat("loclon",locationLongitude);
@@ -3773,6 +3901,7 @@ void loop(){
   serviceWiFiRetryNonBlocking();
   updateAdvImu();
   serviceStepCounter();
+  serviceBatteryMonitor();
   updateOffscreenRunnerRescue();
   if(wifiSetupMode) wifiSetupServer.handleClient();
   // Keep network services alive after reset or a temporary Wi-Fi drop.

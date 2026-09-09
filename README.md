@@ -415,7 +415,6 @@ The current sketch uses Arduino / ESP32 components including:
 -   M5Cardputer
 -   M5Unified
 -   M5GFX / M5Canvas
--   ArduinoJson
 -   WiFi
 -   WebServer
 -   HTTPClient
@@ -439,9 +438,9 @@ includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
 with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
 saved Wi-Fi reconnection, and the temperature-responsive runner.
 
-**SOUND TERRARIUM v108bs includes the Wi-Fi credential safety update.**
-For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The M5Burner merged
-firmware image should be tested on a real Cardputer ADV before publication.
+**SOUND TERRARIUM v108bt includes the Wi-Fi credential safety update and the lightweight JSON parser fixes.**
+For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current release
+fits the default 1.2 MB APP partition used by the Cardputer ADV build.
 
 Automatic mirroring from M5Burner to the M5Launcher OTA catalog may take a few
 hours. Until the entry appears in M5Launcher, use M5Burner or install
@@ -454,7 +453,8 @@ For manual installation, development, or modification:
 1. Download or clone this repository.
 2. Open `SoundTerrarium/SoundTerrarium.ino` in Arduino IDE.
 3. Select the Cardputer board configuration and compile/upload the sketch to a
-   **M5Stack Cardputer ADV**.
+   **M5Stack Cardputer ADV**. The current release compiles within the default
+   **1.2 MB APP** partition in the development environment used for this release.
 
 The Arduino and ESP32 components used by the sketch are listed in the
 [Software / services](#software--services) section above. Exact dependency
