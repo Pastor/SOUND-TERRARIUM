@@ -440,7 +440,7 @@ includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
 with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
 saved Wi-Fi reconnection, and the temperature-responsive runner.
 
-**SOUND TERRARIUM v108bt includes the Wi-Fi credential safety update and the lightweight JSON parser fixes.**
+**SOUND TERRARIUM v108bx is the current Cardputer ADV firmware line.** It carries forward the Wi-Fi credential safety update, setup portal refinements, lightweight JSON parser hardening, tide parsing fixes, battery status display and monitoring, and temperature-responsive runner behavior from the recent v108bs / v108bt work.
 For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current release
 fits the default 1.2 MB APP partition used by the Cardputer ADV build.
 
