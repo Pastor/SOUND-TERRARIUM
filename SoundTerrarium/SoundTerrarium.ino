@@ -1,3 +1,7 @@
+// v108bx: refine lunar latitude so an ordinary new Moon is not shown as a solar eclipse.
+// v108bw: add compact meteor-shower nights near six major annual peaks.
+// v108bv: remove retired, unreachable CLIMB sprites, state, fields, update branch, and draw branch.
+// v108bu-sizefix1: same eclipse features with a smaller astronomical model for the 1.25 MB app partition.
 // v108bt: keep WebServer; harden lightweight JSON parsing and restore original v108bt battery monitor behavior.
 // v108bs: Save Wi-Fi credentials only after a successful connection and add saved-network removal.
 // v108br: v108bq final cleanup; remove retired UFO rescue angle constants and write-only rescue hold state.
@@ -57,12 +61,9 @@
   What this first device build includes:
     - built-in microphone -> spectral-centroid-like terrain control
     - stacked 8-color "Showa graphic EQ" terrain
-    - original Sound Runner sprite family (RUN / JUMP / CLIMB / FALL / WAVE)
+    - original Sound Runner sprite family (RUN / JUMP / FALL / WAVE)
     - short bump -> JUMP
-    - sustained steep rise -> CLIMB
     - steep drop -> FALL
-    - CLIMB: approach ~5 px, then vertical climb while drifting left
-      at the same speed as the terrain
     - clock with NTP when Wi-Fi is available
     - classical face Sun / Moon
     - worldwide weather via Open-Meteo (latitude/longitude)
@@ -103,10 +104,6 @@
 #include <time.h>
 #include <sys/time.h>
 #include <math.h>
-
-// ---------------- User settings ----------------
-static const char* WIFI_SSID = "";         // blank = try saved Wi-Fi credentials from NVS first
-static const char* WIFI_PASS = "";         // e.g. "password"
 
 // Default example: Tokyo. Change these three values for another place.
 static constexpr float DEFAULT_LATITUDE  = 35.6762f;
@@ -171,7 +168,6 @@ static constexpr float TILT_RELEASE_DEG = 1.5f;      // hysteresis: release only
 static constexpr float PLAY_PITCH_LIMIT_DEG = 42.0f; // laid down / strongly pitched = not a tilt command
 static constexpr float TILT_FILTER_ALPHA = 0.10f;    // smooth continuous control, no angle quantization
 static constexpr uint32_t RECOVERY_HOLD_MS = 5000;
-static constexpr float VIRTUAL_MARGIN_X = 120.0f;
 static bool imuReady=false;
 static float imuTiltDeg=0.0f, imuTiltSmoothDeg=0.0f, imuTiltDisplayDeg=0.0f;
 static float imuPitchDeg=0.0f;
@@ -184,7 +180,6 @@ static uint32_t imuLastReadMs=0;
 // so SOUND TERRARIUM adds the current boot delta to a small persisted daily base.
 static bool stepCounterReady=false;
 static uint32_t stepRawOrigin=0;
-static constexpr uint32_t STEP_DIAG_MS=1000UL;
 static uint32_t stepPersistedBase=0;
 static uint32_t stepToday=0;
 static uint32_t stepLastReadMs=0;
@@ -210,7 +205,6 @@ static uint32_t recoverySinceMs=0;
 M5Canvas canvas(&M5Cardputer.Display);
 
 static uint8_t terrain[W];
-static float terrainSmoothY = 116.0f;
 
 // Tempo-driven world scrolling.
 // 60 BPM idle ~= 60 px/sec. 120 BPM ~= 120 px/sec, etc.
@@ -223,11 +217,6 @@ static float targetBpm = IDLE_BPM;
 static float worldSpeedPxPerSec = IDLE_BPM;
 static float scrollAccumulator = 0.0f;
 static uint32_t lastWorldMs = 0;
-
-// v85: last EQ-derived terrain height actually committed to the scrolling history.
-// Used only to interpolate when one loop advances more than one terrain pixel.
-static float lastCommittedTerrainY = 116.0f;
-static bool lastCommittedTerrainValid = false;
 
 // v91: right-side 8-band EQ is now the visible terrain generator.
 // Its 54 px zone is sampled into a smooth spatial road profile and that
@@ -282,16 +271,6 @@ static const char* FALL0[11] = {
 "...ww.....","...ww.....","...wwww...","...wwbww..",
 "...wwbww..","...wwbww..","...ww....."
 };
-static const char* CLIMB0[11] = {
-"....ww....","....ww...o","....wwwwww",".o..www...",
-".wwwwww...","....www...","....www...","...wwbww..",
-"...wwbwww.","...ww.....","..www....."
-};
-static const char* CLIMB1[11] = {
-"....ww....","b...ww....","wwwwww....","...www..b.",
-"...wwwwww.","...www....","...www....","..wwoww...",
-".wwwoww...",".....ww...",".....www.."
-};
 static const char* WAVE0[11] = {
 "....ww.w..","...wwwww..","...wwww...","....ww....",
 "...wwww...","..wwww....","....ww....","....ww....",
@@ -309,7 +288,7 @@ static const char* WAVE2[11] = {
 };
 
 // ---------------- Runner state ----------------
-enum RunnerState { RS_RUN, RS_JUMP, RS_CLIMB, RS_FALL, RS_WAVE };
+enum RunnerState { RS_RUN, RS_JUMP, RS_FALL, RS_WAVE };
 
 struct Runner {
   float x = RUNNER_TARGET_X;
@@ -318,9 +297,6 @@ struct Runner {
   float vy = 0;
   uint16_t anim = 0;
   uint16_t stateT = 0;
-  uint8_t climbPhase = 0; // 0 approach, 1 vertical
-  float climbStartX = 0;
-  float climbTargetY = 0;
   int lastWaveHour = -1;
 } runner;
 
@@ -380,9 +356,6 @@ Preferences wifiPrefs;
 WebServer wifiSetupServer(80);
 bool wifiSetupMode=false;
 uint32_t lastWiFiRetryMs=0;
-
-enum NetStage { NET_NO_WIFI, NET_CONNECTING, NET_WIFI_OK, NET_NTP_OK, NET_NTP_FAIL, NET_SETUP };
-NetStage netStage=NET_NO_WIFI;
 
 // /save must return immediately. Connection testing and location/weather refresh
 // are deferred to loop() so the HTTP handler itself never blocks for tens of seconds.
@@ -458,27 +431,10 @@ static constexpr uint32_t TIDE_RETRY_MS = 30UL*60UL*1000UL;
 static i2s_chan_handle_t micChan = nullptr;
 static int16_t audioBuf[AUDIO_N];
 static bool micReady = false;
-static bool audioPrimed = false;
 static int16_t rawPeak = 0;
 
 float smoothCentroid = 420.0f; // HTML-range centroid baseline
 float smoothRms = 0.0f;
-static bool audioPresent = false;
-
-// Adaptive display range for the microphone spectrum.
-// The browser FFT produces a much wider centroid excursion than the small
-// Goertzel bank on the Cardputer.  These trackers learn the actual centroid
-// range of the current music and expand it into the same visual road height.
-static float centroidFloorHz = 260.0f;
-static float centroidCeilHz  = 900.0f;
-static float terrainNormSmooth = 0.0f;
-// Curvature-limited terrain motion: the slope itself has inertia, so peaks
-// become rounded hills rather than /\ spikes.
-static float terrainSlope = 0.0f;
-// Hill-shape memory: once a summit is crossed, do not let the downhill side
-// become steeper than the uphill side that created that summit.
-static float hillUphillMaxSlope = 0.0f;
-static bool hillWasClimbing = false;
 
 
 
@@ -626,7 +582,6 @@ void tryNTP(){
     // a modern epoch here can only have arrived from SNTP.
     if(now > 1735689600){ // 2025-01-01 UTC
       ntpOK=true;
-      netStage=NET_NTP_OK;
       fallbackEpoch=now;
       fallbackMillis0=millis();
       prefs.putLong64("epoch",(int64_t)now);
@@ -636,7 +591,6 @@ void tryNTP(){
   }
 
   ntpOK=false;
-  netStage=NET_NTP_FAIL;
 }
 
 void localNow(struct tm &tmNow){
@@ -1375,7 +1329,6 @@ static void pollAdvCursorKeys(){
       WiFi.softAPdisconnect(true);
       WiFi.mode(WIFI_STA);
       wifiOK=false;
-      netStage=NET_NO_WIFI;
       wifiRetryStage=WRT_IDLE;
       lastWiFiRetryMs=0; // let loop start a non-blocking retry immediately
       continue;
@@ -1427,7 +1380,6 @@ static void pollAdvCursorKeys(){
       // S = Setup. Enter the Wi-Fi setup portal even while already connected.
       // Existing saved credentials are preserved; the portal can add/update APs.
       if(!wifiSetupMode){
-        netStage=NET_SETUP;
         startWiFiSetupPortalNonBlocking();
       }
     }
@@ -1515,7 +1467,6 @@ void analyzeAudio(){
 
   if(err != ESP_OK || bytesRead < sizeof(int16_t) * 64) return;
 
-  audioPrimed = true;
   const size_t n = bytesRead / sizeof(int16_t);
 
   double sumSq = 0.0;
@@ -1579,7 +1530,6 @@ void analyzeAudio(){
 
   const uint32_t nowMs=millis();
   const bool audioActive = (smoothRms > 0.00018f) || (rawPeak > 12);
-  audioPresent = audioActive;
   const bool beatHit =
       audioActive &&
       lowBeatEnergy > (beatEnergyAvg*1.55f + 0.00005f) &&
@@ -2106,7 +2056,7 @@ void updateRunner(bool motionTick){
   int y3=groundAt((int)runner.x+20);
 
   if(runner.state==RS_RUN){
-    // Ease back toward the usual screen position after a climb/fall.
+    // Ease back toward the usual screen position after special motion.
     if(runner.x<RUNNER_TARGET_X) runner.x=fminf((float)RUNNER_TARGET_X,runner.x+0.35f*RUNNER_MOTION_SCALE);
     if(runner.x>RUNNER_TARGET_X) runner.x=fmaxf((float)RUNNER_TARGET_X,runner.x-0.20f*RUNNER_MOTION_SCALE);
     runner.y=gx-11;
@@ -2130,8 +2080,6 @@ void updateRunner(bool motionTick){
       runner.stateT=0;
       return;
     }
-    // v23b: climbing disabled. RUN pose follows even near-vertical spikes.
-
     struct tm t;
     localNow(t);
     if(t.tm_min==0 && t.tm_hour!=runner.lastWaveHour){
@@ -2159,28 +2107,6 @@ void updateRunner(bool motionTick){
       runner.vy=0;
       runner.state=RS_RUN;
       runner.stateT=0;
-    }
-  }
-  else if(runner.state==RS_CLIMB){
-    if(runner.climbPhase==0){
-      // Short approach only; never allow the runner to drift off-screen.
-      runner.x += 0.18f*RUNNER_MOTION_SCALE;
-      runner.x=clampf(runner.x,55.0f,90.0f);
-      if(runner.x-runner.climbStartX>=4.0f){
-        runner.climbPhase=1;
-        runner.stateT=0;
-      }
-    } else {
-      // True screen-space climb: X is held fixed while Y rises.
-      runner.x=clampf(runner.x,55.0f,90.0f);
-      float dy=runner.climbTargetY-runner.y;
-      if(fabsf(dy)<=0.7f || runner.stateT>60){
-        runner.y=runner.climbTargetY;
-        runner.state=RS_RUN;
-        runner.stateT=0;
-      } else {
-        runner.y += copysignf(fminf(0.55f*RUNNER_MOTION_SCALE,fabsf(dy)),dy);
-      }
     }
   }
   else if(runner.state==RS_WAVE){
@@ -2570,27 +2496,95 @@ void drawClassicSun(int cx,int cy){
   canvas.drawLine(cx-1,cy+8,cx+1,cy+8,ink);
 }
 
-// Astronomical lunar phase from UTC epoch.
-// Returns 0.0 at new moon, 0.25 first quarter, 0.5 full moon,
-// 0.75 last quarter. Reference new moon: 2000-01-06 18:14 UTC.
-float lunarPhase01(){
-  const double SYNODIC_DAYS = 29.530588853;
-  const double REF_NEW_MOON_JD = 2451550.25972;
-  const double UNIX_JD = 2440587.5;
+// Compact geocentric Sun/Moon model. It improves the displayed lunar phase and
+// supplies a real syzygy/node gate for the eclipse artwork without a date table.
+// This deliberately remains a visual approximation, not a local eclipse-path solver.
+struct LunarGeometry {
+  float elongationDeg; // Moon minus Sun longitude, -180..+180
+  float latitudeDeg;
+};
+static LunarGeometry currentLunarGeometry();
 
-  double jd = UNIX_JD + (double)safeEpoch() / 86400.0;
-  double p = fmod((jd - REF_NEW_MOON_JD) / SYNODIC_DAYS, 1.0);
-  if(p < 0.0) p += 1.0;
-  return (float)p;
+static float normDeg(float a){
+  a=fmodf(a,360.0f);
+  return a<0.0f ? a+360.0f : a;
 }
 
-void drawClassicMoon(int cx,int cy,uint16_t sky,float visibility=1.0f){
+static LunarGeometry currentLunarGeometry(){
+  static uint32_t cachedAtMs=0;
+  static LunarGeometry cached={0.0f,0.0f};
+  uint32_t nowMs=millis();
+  if(cachedAtMs!=0 && (uint32_t)(nowMs-cachedAtMs)<30000UL) return cached;
+  cachedAtMs=nowMs;
+  time_t now=safeEpoch();
+
+  const float T=(float)(((2440587.5+(double)now/86400.0)-2451545.0)/36525.0);
+  const float D =normDeg(297.8501921f+445267.1114034f*T);
+  const float M =normDeg(357.5291092f+ 35999.0502909f*T);
+  const float Mp=normDeg(134.9633964f+477198.8675055f*T);
+  const float F =normDeg( 93.2720950f+483202.0175233f*T);
+  const float r=PI/180.0f;
+
+  // Largest periodic terms are sufficient at this display resolution.
+  float e=D
+    +6.289f*sinf(Mp*r)+1.274f*sinf((2.0f*D-Mp)*r)
+    -1.9146f*sinf(M*r);
+  const float moonLat=
+     5.128f*sinf(F*r)+0.280f*sinf((Mp+F)*r)
+    +0.277f*sinf((Mp-F)*r);
+  e=normDeg(e);
+  if(e>180.0f) e-=360.0f;
+  cached={e,moonLat};
+  return cached;
+}
+
+float lunarPhase01(){
+  float e=currentLunarGeometry().elongationDeg;
+  return (e<0.0f ? e+360.0f : e)/360.0f;
+}
+
+struct EclipseVisual {
+  bool solar=false;
+  float solarProgress=0.0f;
+  float lunarStrength=0.0f;
+};
+static EclipseVisual eclipseVisualNow();
+static void drawSolarEclipseMask(int cx,int cy,const EclipseVisual &e);
+
+static EclipseVisual eclipseVisualNow(){
+  EclipseVisual v;
+  LunarGeometry g=currentLunarGeometry();
+  float ae=fabsf(g.elongationDeg), ab=fabsf(g.latitudeDeg);
+
+  // A solar eclipse is possible only near new Moon and a lunar node. The
+  // latitude threshold rejects ordinary new Moons such as 2026-09-11.
+  if(ae<1.8f && ab<1.45f){
+    v.solar=true;
+    v.solarProgress=g.elongationDeg/1.8f;
+  }
+
+  // Lunar eclipses occur near full Moon and a node. A high-latitude event
+  // becomes a subtle penumbral tint instead of a full blood-Moon effect.
+  float fullSep=fabsf(180.0f-ae);
+  if(fullSep<2.8f && ab<1.30f){
+    v.lunarStrength=(1.0f-fullSep/2.8f)*(1.0f-0.50f*ab/1.30f);
+  }
+  return v;
+}
+
+static void drawSolarEclipseMask(int cx,int cy,const EclipseVisual &e){
+  int x=cx+(int)roundf(e.solarProgress*18.0f);
+  canvas.fillCircle(x,cy,9,TFT_BLACK);
+}
+
+void drawClassicMoon(int cx,int cy,uint16_t sky,float visibility=1.0f,float eclipse=0.0f){
   // Same face proportions as the Sun. On bright daytime sky the entire Moon
   // is blended toward the sky color, reproducing the low-contrast daytime Moon.
   visibility=clampf(visibility,0.0f,1.0f);
-  const uint16_t baseFace=0xF689;
-  const uint16_t baseInk =0x4204;
-  const uint16_t baseDark=0x3186;
+  eclipse=clampf(eclipse,0.0f,1.0f);
+  const uint16_t baseFace=mix565(0xF689,0xA180,eclipse);
+  const uint16_t baseInk =mix565(0x4204,0x2800,eclipse);
+  const uint16_t baseDark=mix565(0x3186,0x4800,eclipse);
   const uint16_t face=mix565(sky,baseFace,visibility);
   const uint16_t ink =mix565(sky,baseInk,visibility);
   const uint16_t darkMoon=mix565(sky,baseDark,visibility);
@@ -2699,25 +2693,29 @@ void drawWeatherAndClock(){
   struct tm t;
   localNow(t);
   bool day=isSolarDayMinute(minuteOfDay(t));
+  float sunPhase=0.0f,moonPhase=0.0f;
+  int sunX=0,sunY=0,moonX=0,moonY=0;
+  bool sunVisible=solarScheduleValid && sunVisibleAndPhase(t,sunPhase);
+  bool moonVisible=lunarScheduleValid && moonVisibleAndPhase(t,moonPhase);
+  if(sunVisible) celestialXYForPhase(sunPhase,sunX,sunY);
+  if(moonVisible) moonXYForPhase(moonPhase,moonX,moonY);
+
+  EclipseVisual eclipse=eclipseVisualNow();
+  bool solarEclipse=eclipse.solar && sunVisible && moonVisible;
   uint16_t sky=skyColorForTime(t);
   canvas.fillScreen(sky);
 
-  // v98: Sun and Moon have independent real rise/set schedules. A daytime Moon
-  // is therefore possible. CLOUDY does not delete either body; later cloud
-  // drawing can naturally pass in front of them. Preserve the existing
-  // rain/thunder policy for now.
+  // Normal daytime overlap draws the Moon first and the Sun last, preventing
+  // an ordinary new Moon from looking like a false eclipse. Only a real
+  // syzygy/node event enables the dedicated eclipse mask.
   bool hide=(weather.mode==WX_RAIN || weather.mode==WX_THUNDER);
   if(!hide){
-    float p; int cx,cy;
-    if(solarScheduleValid && sunVisibleAndPhase(t,p)){
-      celestialXYForPhase(p,cx,cy);
-      drawClassicSun(cx,cy);
-    }
-    if(lunarScheduleValid && moonVisibleAndPhase(t,p)){
-      moonXYForPhase(p,cx,cy);
+    if(moonVisible && !solarEclipse){
       float m=t.tm_hour*60.0f+t.tm_min+t.tm_sec/60.0f;
-      drawClassicMoon(cx,cy,sky,moonVisibilityFromSun(m));
+      drawClassicMoon(moonX,moonY,sky,moonVisibilityFromSun(m),eclipse.lunarStrength);
     }
+    if(sunVisible) drawClassicSun(sunX,sunY);
+    if(solarEclipse) drawSolarEclipseMask(sunX,sunY,eclipse);
   }
 
   // Night sky: stars instead of decorative clouds.
@@ -2753,6 +2751,27 @@ void drawWeatherAndClock(){
         if(phase==0 || phase==1) continue;  // brief retro-style off beat
       }
       canvas.drawPixel(sx[i],sy[i],sc[i]);
+    }
+
+    // Simplified annual meteor showers: more shooting stars around six major
+    // peak dates. Clouds are drawn later and can naturally pass in front.
+    uint8_t mon=(uint8_t)(t.tm_mon+1),dom=(uint8_t)t.tm_mday;
+    bool shower=(mon==1  && dom>=2  && dom<=4 ) || // Quadrantids
+                (mon==4  && dom>=21 && dom<=23) || // Lyrids
+                (mon==8  && dom>=11 && dom<=13) || // Perseids
+                (mon==10 && dom>=20 && dom<=22) || // Orionids
+                (mon==11 && dom>=16 && dom<=18) || // Leonids
+                (mon==12 && dom>=12 && dom<=14);   // Geminids
+    if(shower && (weather.mode==WX_CLEAR || weather.mode==WX_CLOUDY)){
+      uint8_t beat=(uint8_t)((millis()/45UL)%61UL);
+      for(uint8_t i=0;i<4;i++){
+        uint8_t p=(uint8_t)((beat+i*15U)%61U);
+        if(p<11){
+          int x=225-(int)i*47-(int)p*10;
+          int y=7+(int)i*12+(int)p*3;
+          canvas.drawLine(x,y,x+9,y-4,TFT_YELLOW);
+        }
+      }
     }
   }
 
@@ -3096,7 +3115,6 @@ void drawRunner(){
     sp=(f==0)?RUN0:(f==1)?RUN1:RUN2;
   } else if(runner.state==RS_JUMP) sp=JUMP0;
   else if(runner.state==RS_FALL) sp=FALL0;
-  else if(runner.state==RS_CLIMB) sp=((runner.anim/6)%2)?CLIMB0:CLIMB1;
   else if(runner.state==RS_WAVE){
     int f=(runner.anim/7)%3;
     sp=(f==0)?WAVE0:(f==1)?WAVE1:WAVE2;
@@ -3527,7 +3545,6 @@ static void startWiFiRetryNonBlocking(){
   if(WiFi.status()==WL_CONNECTED) return;
 
   wifiOK=false;
-  netStage=NET_CONNECTING;
   WiFi.mode(WIFI_STA);
 
   int lastSlot=getLastWiFiSlot();
@@ -3559,7 +3576,6 @@ static void serviceWiFiRetryNonBlocking(){
 
   if(WiFi.status()==WL_CONNECTED){
     wifiOK=true;
-    netStage=NET_WIFI_OK;
     wifiRetryStage=WRT_IDLE;
     return;
   }
@@ -3607,7 +3623,6 @@ static void serviceWiFiRetryNonBlocking(){
     if(wifiRetryBestSlot<0){
       wifiRetryStage=WRT_IDLE;
       wifiOK=false;
-      netStage=NET_NO_WIFI;
       return;
     }
 
@@ -3623,14 +3638,12 @@ static void serviceWiFiRetryNonBlocking(){
 
     wifiRetryStage=WRT_IDLE;
     wifiOK=false;
-    netStage=NET_NO_WIFI;
     return;
   }
 }
 
 void connectWiFi(bool allowSetup){
   wifiOK=false;
-  netStage=NET_CONNECTING;
 
   WiFi.mode(WIFI_STA);
   delay(150);
@@ -3652,7 +3665,6 @@ void connectWiFi(bool allowSetup){
     if(WiFi.status()==WL_CONNECTED){
       wifiOK=true;
       wifiSetupMode=false;
-      netStage=NET_WIFI_OK;
       return;
     }
     WiFi.disconnect(false,false);
@@ -3693,18 +3705,15 @@ void connectWiFi(bool allowSetup){
     if(wifiOK){
       setLastWiFiSlot(bestSlot);
       wifiSetupMode=false;
-      netStage=NET_WIFI_OK;
       return;
     }
   }
 
   if(allowSetup){
-    netStage=NET_SETUP;
     startWiFiSetupPortalNonBlocking();
   }else{
     // Offline operation is valid. A failed reconnect must not trap the user
     // back in SETUP after they explicitly exited it.
-    netStage=NET_NO_WIFI;
     wifiSetupMode=false;
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_STA);
@@ -3725,7 +3734,6 @@ static void servicePendingWiFiSetup(){
     WiFi.mode(WIFI_STA);
     WiFi.begin(pendingSetupSsid.c_str(),pendingSetupPass.c_str());
     wifiOK=false;
-    netStage=NET_CONNECTING;
     pendingSetupStartedMs=millis();
     pendingSetupStage=PSET_WAIT_WIFI;
     return;
@@ -3741,14 +3749,12 @@ static void servicePendingWiFiSetup(){
       if(findSavedWiFi(pendingSetupSsid,savedPassCheck,savedSlot) && savedSlot>=0){
         setLastWiFiSlot(savedSlot);
       }
-      netStage=NET_WIFI_OK;
       pendingSetupStage=PSET_NTP;
       return;
     }
 
     if((uint32_t)(millis()-pendingSetupStartedMs)>=20000UL){
       wifiOK=false;
-      netStage=NET_NO_WIFI;
       pendingSetupStage=PSET_DONE;
     }
     return;
@@ -3847,9 +3853,6 @@ void setup(){
   for(int x=0;x<W;x++){
     terrain[x]=(uint8_t)(108 + 3*sinf(x*0.05f));
   }
-  lastCommittedTerrainY=(float)terrain[W-1];
-  lastCommittedTerrainValid=true;
-
   connectWiFi();
   if(wifiOK){
     tryNTP();
