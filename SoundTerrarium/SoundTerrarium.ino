@@ -1,3 +1,4 @@
+// v108by: add a once-a-week Sunday 21:00 special shooting star (night-independent, fair/cloudy only, reuses shower streak geometry).
 // v108bx: refine lunar latitude so an ordinary new Moon is not shown as a solar eclipse.
 // v108bw: add compact meteor-shower nights near six major annual peaks.
 // v108bv: remove retired, unreachable CLIMB sprites, state, fields, update branch, and draw branch.
@@ -399,6 +400,14 @@ uint32_t lastEpochSaveMs = 0;
 static uint32_t lastEphemerisAttemptMs = 0;
 static constexpr uint32_t EPHEMERIS_RETRY_MS = 60UL*60UL*1000UL;
 static int ephemerisDateKey = 0;
+
+// Weekly Sunday 21:00 special shooting star (a quiet, once-a-week Easter egg).
+// specialStarFiredDateKey uses the same YYYYMMDD key style as ephemerisDateKey,
+// so a new day (and therefore next Sunday) naturally re-arms it without any
+// persistence. specialStarTriggerMs!=0 means the single streak animation is
+// currently playing; it is cleared once that short animation finishes.
+static int specialStarFiredDateKey = 0;
+static uint32_t specialStarTriggerMs = 0;
 
 bool weatherOK = false;
 
@@ -2772,6 +2781,36 @@ void drawWeatherAndClock(){
           canvas.drawLine(x,y,x+9,y-4,TFT_YELLOW);
         }
       }
+    }
+  }
+
+  // Weekly Sunday 21:00 special shooting star: a single quiet streak, once a
+  // week, as a small "well done this week / here's to next week" moment.
+  // Deliberately independent of day/night (a summer-evening 21:00 can still
+  // be light at high latitudes) and reuses the exact streak geometry/speed
+  // of the annual meteor showers above so no new drawing logic is added.
+  {
+    int todayKey=(t.tm_year+1900)*10000+(t.tm_mon+1)*100+t.tm_mday; // same key shape as localDateKey()
+    bool sundayWindow=(t.tm_wday==0 && t.tm_hour==21 && t.tm_min==0);
+    if(sundayWindow && specialStarFiredDateKey!=todayKey){
+      specialStarFiredDateKey=todayKey; // this Sunday is consumed either way; no retry until next Sunday
+      bool fairAtTrigger=(weather.mode==WX_CLEAR || weather.mode==WX_CLOUDY); // same allow-list as the shower gate above
+      if(fairAtTrigger) specialStarTriggerMs=millis(); // bad weather: stay off for this week
+    }
+  }
+  if(specialStarTriggerMs!=0){
+    uint32_t elapsed=millis()-specialStarTriggerMs;
+    const uint32_t SPECIAL_STAR_DURATION_MS=11UL*45UL; // matches the visible p<11 streak range exactly
+    if(elapsed>=SPECIAL_STAR_DURATION_MS){
+      specialStarTriggerMs=0; // single pass finished; stays off until next Sunday
+    }else{
+      uint8_t p=(uint8_t)(elapsed/45UL);
+      int x=225-(int)p*10;
+      int y=7+(int)p*3;
+      // A few quiet color steps along the same streak: white / pale cyan / white / pale yellow / white.
+      static const uint16_t specialColors[5]={TFT_WHITE,0xB73D,TFT_WHITE,0xFFD7,TFT_WHITE}; // white / pale cyan / white / pale yellow / white
+      uint8_t colorPhase=(uint8_t)((p/2)%5);
+      canvas.drawLine(x,y,x+9,y-4,specialColors[colorPhase]);
     }
   }
 

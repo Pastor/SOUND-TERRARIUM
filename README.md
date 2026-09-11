@@ -125,6 +125,16 @@ When an Internet connection is available, SOUND TERRARIUM uses
 -   Location-aware timezone and local clock
 -   Daytime Moon visibility that becomes paler as daylight increases
 
+### Sunday 9 PM Shooting Star 🌠
+
+Every Sunday at 9 PM local time, a special shooting star crosses the SOUND TERRARIUM sky.
+
+It is a small moment at the end of the week — a time to look back on the week that has passed and make a wish for the week ahead. No message appears on the screen and no sound announces it. If the weather is clear or cloudy, a single softly colored shooting star simply crosses the little sky. In rain, snow, or thunder, that week's star remains unseen.
+
+For everyone who kept running this week — including the tiny runner inside the terrarium.
+
+**Something good may be waiting for you next week. 🌠**
+
 **T** is reserved for the central clock view: local date, weekday, time and
 weather. **TEMP** (temperature in °C) and **HUM** (relative humidity in %)
 are part of the **I (Information)** display.
@@ -440,7 +450,7 @@ includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
 with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
 saved Wi-Fi reconnection, and the temperature-responsive runner.
 
-**SOUND TERRARIUM v108bx is the current Cardputer ADV firmware line.** It refines the eclipse visual model so an ordinary new Moon is no longer shown as a solar eclipse, while carrying forward the Wi-Fi credential safety update, setup portal refinements, lightweight JSON parser hardening, tide parsing fixes, battery status display and monitoring, and temperature-responsive runner behavior from the recent v108bs / v108bt work.
+**SOUND TERRARIUM v108by is the current Cardputer ADV firmware line.** It adds the Sunday 9 PM special shooting star — a small weekly moment to look back on the past week and make a wish for the week ahead — while retaining the eclipse visual refinement and the Wi-Fi, tide, battery, weather, temperature-responsive runner, and other improvements from the recent v108bs–v108bx releases.
 For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current release
 fits the default 1.2 MB APP partition used by the Cardputer ADV build.
 
