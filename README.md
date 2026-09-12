@@ -6,45 +6,52 @@
 Time and weather create the sky.\
 A tiny runner lives inside it.**
 
-**A tiny living world that simulates the present moment of your chosen city.**
+**A tiny living world that simulates the present moment of your chosen
+city.**
 
 ## Try SOUND TERRARIUM
 
-▶ **[TRY THE WEB VERSION](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/)**
+▶ **[TRY THE WEB
+VERSION](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/)**
 
-**Works on desktop, iPhone, and Android. Allow microphone access; on phones, use the on-screen touch controls.**
+**Works on desktop, iPhone, and Android. Allow microphone access; on
+phones, use the on-screen touch controls.**
 
-🎬 **[WATCH THE DEMO](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/SOUND_TERRARIUM_demo.mp4)**
+🎬 **[WATCH THE
+DEMO](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/SOUND_TERRARIUM_demo.mp4)**
 
-**MAKE YOUR OWN SOUND TERRARIUM.**  
-**MODIFY IT. REMIX IT. SHARE IT.**  
-If I love your idea, it might even become part of the original SOUND TERRARIUM.
+**MAKE YOUR OWN SOUND TERRARIUM.**\
+**MODIFY IT. REMIX IT. SHARE IT.**\
+If I love your idea, it might even become part of the original SOUND
+TERRARIUM.
 
 SOUND TERRARIUM is open source under the **MIT License**.
 
-<img width="540" height="304" alt="IMG_6223_1951" src="https://github.com/user-attachments/assets/1133b926-5f54-47cf-82cd-0ba96b2522a5" />
+`<img width="540" height="304" alt="IMG_6223_1951" src="https://github.com/user-attachments/assets/1133b926-5f54-47cf-82cd-0ba96b2522a5" />`{=html}
 
 SOUND TERRARIUM is a small audio-reactive world for the **M5Stack
 Cardputer ADV**.
 
-Set a city anywhere in the world, and SOUND TERRARIUM brings its
-present moment into the tiny screen — local time, current weather,
-temperature and humidity, atmospheric pressure, precipitation probability, battery status,
-sunrise and sunset, moonrise and moonset, tide information, lunar phase,
-a reference step count from the built-in BMI270 IMU, and the changing light
-from day through twilight into night.
+Set a city anywhere in the world, and SOUND TERRARIUM brings its present
+moment into the tiny screen --- local time, current weather, temperature
+and humidity, atmospheric pressure, precipitation probability, battery
+status, sunrise and sunset, moonrise and moonset, tide information,
+lunar phase, a reference step count from the built-in BMI270 IMU, and
+the changing light from day through twilight into night.
 
 The built-in microphone listens to the sound around the device and
 analyzes it in real time. An 8-band graphic equalizer drives the terrain
 generator. The EQ display itself is hidden in the normal terrarium view
-and can be revealed with **I (Information)**. Whether the bars are visible
-or hidden, the same eight-band analysis continues to generate the terrain.
-New ground is born at the right edge, scrolls across the screen, and a tiny
-runner lives and runs on the landscape created by sound.
+and can be revealed with **I (Information)**. Whether the bars are
+visible or hidden, the same eight-band analysis continues to generate
+the terrain. New ground is born at the right edge, scrolls across the
+screen, and a tiny runner lives and runs on the landscape created by
+sound.
 
 At the same time, the sky is connected to the real world. When Wi-Fi is
 available, SOUND TERRARIUM uses current time and Open-Meteo data to
-reflect weather, sunrise, sunset, moonrise, moonset, lunar phase, atmospheric pressure, precipitation probability, and tide information.
+reflect weather, sunrise, sunset, moonrise, moonset, lunar phase,
+atmospheric pressure, precipitation probability, and tide information.
 
 In short:
 
@@ -69,14 +76,14 @@ tilts the displayed terrain and affects the runner's movement.
 
 ### Step counter
 
-The Cardputer ADV build also uses the **BMI270 built-in Step Counter** to show
-**STEP** as a reference value. The count may be reflected after a short delay,
-and accuracy varies with how the Cardputer ADV is carried or moved. It is not
-intended as a fitness or medical measurement.
+The Cardputer ADV build also uses the **BMI270 built-in Step Counter**
+to show **STEP** as a reference value. The count may be reflected after
+a short delay, and accuracy varies with how the Cardputer ADV is carried
+or moved. It is not intended as a fitness or medical measurement.
 
-**STEP is part of the I (Information) display** and appears at the bottom-left,
-directly above **AP / Wi-Fi status** and **LOCATION**. Hold **C for 3 seconds**
-to reset the displayed STEP count to **0**.
+**STEP is part of the I (Information) display** and appears at the
+bottom-left, directly above **AP / Wi-Fi status** and **LOCATION**. Hold
+**C for 3 seconds** to reset the displayed STEP count to **0**.
 
 ------------------------------------------------------------------------
 
@@ -86,9 +93,11 @@ to reset the displayed STEP count to **0**.
 
 -   Uses the **Cardputer ADV built-in microphone**
 -   Real-time spectral analysis from approximately **80--1800 Hz**
--   Eight-band EQ terrain generator; its bars are shown or hidden with **I**
+-   Eight-band EQ terrain generator; its bars are shown or hidden with
+    **I**
 -   Cool-to-warm retro EQ palette
--   The eight EQ band heights directly generate new terrain even while the bars are hidden
+-   The eight EQ band heights directly generate new terrain even while
+    the bars are hidden
 -   Generated terrain scrolls from right to left
 -   Audio activity also influences the pace of the world
 -   Quiet periods fall back smoothly to an idle running pace
@@ -98,13 +107,14 @@ to reset the displayed STEP count to **0**.
 The runner reacts to the terrain and has several animation states,
 including running, jumping, climbing, falling, and waving.
 
-There are also manual and scheduled events, including a UFO sequence. On the
-Cardputer ADV build, if tilt carries the runner completely off-screen, there is
-a five-second self-recovery window; if the runner is still missing after that,
-a UFO rescue sequence automatically comes to bring it back. If dropping the
-runner would immediately cause it to slide off-screen again under the current
-tilt physics, the UFO keeps the runner safely aboard. The runner is returned to
-the terrain once the current device pose no longer causes that slide.
+There are also manual and scheduled events, including a UFO sequence. On
+the Cardputer ADV build, if tilt carries the runner completely
+off-screen, there is a five-second self-recovery window; if the runner
+is still missing after that, a UFO rescue sequence automatically comes
+to bring it back. If dropping the runner would immediately cause it to
+slide off-screen again under the current tilt physics, the UFO keeps the
+runner safely aboard. The runner is returned to the terrain once the
+current device pose no longer causes that slide.
 
 ### A sky connected to the real world
 
@@ -127,64 +137,75 @@ When an Internet connection is available, SOUND TERRARIUM uses
 
 ### Sunday 9 PM Shooting Star 🌠
 
-Every Sunday at 9 PM local time, a special shooting star crosses the SOUND TERRARIUM sky.
+Every Sunday at 9 PM local time, a special shooting star crosses the
+SOUND TERRARIUM sky.
 
-It is a small moment at the end of the week — a time to look back on the week that has passed and make a wish for the week ahead. No message appears on the screen and no sound announces it. If the weather is clear or cloudy, a single softly colored shooting star simply crosses the little sky. In rain, snow, or thunder, that week's star remains unseen.
+It is a small moment at the end of the week --- a time to look back on
+the week that has passed and make a wish for the week ahead. No message
+appears on the screen and no sound announces it. If the weather is clear
+or cloudy, a single softly colored shooting star simply crosses the
+little sky. In rain, snow, or thunder, that week's star remains unseen.
 
-For everyone who kept running this week — including the tiny runner inside the terrarium.
+For everyone who kept running this week --- including the tiny runner
+inside the terrarium.
 
 **Something good may be waiting for you next week. 🌠**
 
-**T** is reserved for the central clock view: local date, weekday, time and
-weather. **TEMP** (temperature in °C) and **HUM** (relative humidity in %)
-are part of the **I (Information)** display.
+**T** is reserved for the central clock view: local date, weekday, time
+and weather. **TEMP** (temperature in °C) and **HUM** (relative humidity
+in %) are part of the **I (Information)** display.
 
 ### Runner temperature colors
 
 The runner's white pixels respond to the configured location's current
-temperature in both the device and Web versions. Existing orange/blue accent
-pixels stay unchanged, in every pose including UFO capture.
-The outline becomes white only while the body is blue (−20°C or below) at
-local night, using the existing sunrise/sunset day/night schedule. Otherwise
-the outline stays black, including when offline or after a failed weather request.
+temperature in both the device and Web versions. Existing orange/blue
+accent pixels stay unchanged, in every pose including UFO capture. The
+outline becomes white only while the body is blue (−20°C or below) at
+local night, using the existing sunrise/sunset day/night schedule.
+Otherwise the outline stays black, including when offline or after a
+failed weather request.
 
-| Current temperature | White body pixels become |
-| --- | --- |
-| 38°C or above | Red |
-| 36°C to below 38°C | Orange |
-| Above −10°C and below 36°C | White (normal) |
-| Above −20°C up to −10°C | Light blue |
-| −20°C or below | Blue |
+  Current temperature          White body pixels become
+  ---------------------------- --------------------------
+  38°C or above                Red
+  36°C to below 38°C           Orange
+  Above −10°C and below 36°C   White (normal)
+  Above −20°C up to −10°C      Light blue
+  −20°C or below               Blue
 
-Weather is normally requested every 30 minutes; a new temperature is reflected
-on the next frame. This works independently of the T/I information overlays.
-While offline, before a valid online temperature is received, or after a failed
-weather request, the body returns to white (the original accent colors remain).
-Cached weather from a previous boot does not activate the tint. After reconnection,
-tint resumes only after a successful weather request: the device retries using
-its existing one-minute retry limit, while the Web version keeps its 30-minute
-schedule (changing location or reloading also requests weather).
-These thresholds are visual effects, not medical warnings or equivalent hot/cold
-danger levels.
+Weather is normally requested every 30 minutes; a new temperature is
+reflected on the next frame. This works independently of the T/I
+information overlays. While offline, before a valid online temperature
+is received, or after a failed weather request, the body returns to
+white (the original accent colors remain). Cached weather from a
+previous boot does not activate the tint. After reconnection, tint
+resumes only after a successful weather request: the device retries
+using its existing one-minute retry limit, while the Web version keeps
+its 30-minute schedule (changing location or reloading also requests
+weather). These thresholds are visual effects, not medical warnings or
+equivalent hot/cold danger levels.
 
 More detailed environmental information is treated as auxiliary data:
-**PRES** (mean sea-level pressure), **RAIN** (hourly precipitation probability
-provided by Open-Meteo for the configured location), **TEMP/HUM**, daily
-**SUN/MOON rise/set schedules**, **HIGH/LOW tide times**, current
-**TIDE UP / TIDE DN** direction, **STEP**, the saved **LOCATION**, current
-**AP / Wi-Fi status**, battery level (**BAT**), and the visible **8-band EQ**. These are hidden by default to keep the 240 × 135
-world unobstructed and can be shown or hidden together with the
-**I (Information)** key. **I is independent of T**, so auxiliary information
-can remain visible even when the normal date/clock/weather overlay is hidden.
+**PRES** (mean sea-level pressure), **RAIN** (hourly precipitation
+probability provided by Open-Meteo for the configured location),
+**TEMP/HUM**, daily **SUN/MOON rise/set schedules**, **HIGH/LOW tide
+times**, current **TIDE UP / TIDE DN** direction, **STEP**, the saved
+**LOCATION**, current **AP / Wi-Fi status**, battery level (**BAT**),
+and the visible **8-band EQ**. These are hidden by default to keep the
+240 × 135 world unobstructed and can be shown or hidden together with
+the **I (Information)** key. **I is independent of T**, so auxiliary
+information can remain visible even when the normal date/clock/weather
+overlay is hidden.
 
 The IMU still controls world tilt and runner movement, but its numeric
-left/right and front/back angle diagnostics are no longer drawn on the normal
-scene. When auxiliary information is shown, **HIGH** and **LOW** tide times are
-stacked beneath the SUN/MOON information with a compact blue three-line wave
-symbol. At the bottom-left, **STEP** appears above **AP / Wi-Fi status**, with
-**LOCATION** below it. At the lower-right, **BAT** appears below the EQ. The EQ
-is visible only while **I** is on, but its audio analysis continues unchanged
-while hidden, so the sound-generated terrain never stops responding.
+left/right and front/back angle diagnostics are no longer drawn on the
+normal scene. When auxiliary information is shown, **HIGH** and **LOW**
+tide times are stacked beneath the SUN/MOON information with a compact
+blue three-line wave symbol. At the bottom-left, **STEP** appears above
+**AP / Wi-Fi status**, with **LOCATION** below it. At the lower-right,
+**BAT** appears below the EQ. The EQ is visible only while **I** is on,
+but its audio analysis continues unchanged while hidden, so the
+sound-generated terrain never stops responding.
 
 The daily Sun/Moon ephemeris is treated separately from frequently
 changing weather. After a successful daily fetch, the rise/set values
@@ -193,11 +214,11 @@ requests the new day's values; if that update cannot be obtained, it
 keeps the last good values and retries periodically rather than
 replacing them with guessed data.
 
-Tide information is obtained separately from the Open-Meteo Marine API. The
-next high and low tide times and the current rising/falling direction are
-shown as auxiliary information. Tide data is refreshed periodically and, if a
-request fails, SOUND TERRARIUM keeps the last valid values when possible and
-retries later.
+Tide information is obtained separately from the Open-Meteo Marine API.
+The next high and low tide times and the current rising/falling
+direction are shown as auxiliary information. Tide data is refreshed
+periodically and, if a request fails, SOUND TERRARIUM keeps the last
+valid values when possible and retries later.
 
 Weather is represented visually with conditions such as:
 
@@ -207,25 +228,29 @@ Weather is represented visually with conditions such as:
 -   SNOW
 -   THUNDER
 
-The Sun and Moon follow low celestial arcs across the display. At rise time,
-each body is already visible at the corresponding edge of the screen and then
-travels across the sky toward its set edge. The Moon can also appear during
-daytime when its rise/set schedule places it above the horizon, but its contrast
-is reduced as modeled daylight becomes stronger.
+The Sun and Moon follow low celestial arcs across the display. At rise
+time, each body is already visible at the corresponding edge of the
+screen and then travels across the sky toward its set edge. The Moon can
+also appear during daytime when its rise/set schedule places it above
+the horizon, but its contrast is reduced as modeled daylight becomes
+stronger.
 
-Sky brightness and twilight are driven by a solar-elevation-style visual model
-based on the selected location's actual sunrise and sunset, rather than by a
-fixed number of minutes before or after those events.
+Sky brightness and twilight are driven by a solar-elevation-style visual
+model based on the selected location's actual sunrise and sunset, rather
+than by a fixed number of minutes before or after those events.
 
 ### Offline operation
 
 Wi-Fi is useful, but it is **not required for the core SOUND TERRARIUM
 experience**.
 
-Runtime Wi-Fi reconnection is handled without blocking the visual loop. When no saved access point is available, the clock, terrain, runner, audio-reactive scene and controls continue operating while reconnection attempts happen in the background.
+Runtime Wi-Fi reconnection is handled without blocking the visual loop.
+When no saved access point is available, the clock, terrain, runner,
+audio-reactive scene and controls continue operating while reconnection
+attempts happen in the background.
 
-Audio analysis, the hidden-or-visible EQ engine, terrain generation, the runner, and the main
-animation continue locally on the Cardputer ADV.
+Audio analysis, the hidden-or-visible EQ engine, terrain generation, the
+runner, and the main animation continue locally on the Cardputer ADV.
 
 Previously obtained time/weather/solar information is retained for
 fallback operation where possible.
@@ -235,7 +260,7 @@ fallback operation where possible.
 ## Controls
 
   Key     Function
-  ------- -----------------------------------------------------
+  ------- -------------------------------------------------------------------------------------------------------------------------
   **J**   Jump
   **W**   Wave
   **U**   UFO event
@@ -271,24 +296,28 @@ Connect a phone or computer to that Wi-Fi network, then open:
 `http://192.168.4.1`
 
 The browser setup page scans nearby Wi-Fi networks and lets you select a
-network and enter its password. It also includes **Location (city)**. Enter a
-city such as `New York`, `London`, or `Tokyo`; after Wi-Fi connects, SOUND
-TERRARIUM uses the Open-Meteo Geocoding API to resolve that city to latitude
-and longitude and stores the selected location locally.
+network and enter its password. It also includes **Location (city)**.
+Enter a city such as `New York`, `London`, or `Tokyo`; after Wi-Fi
+connects, SOUND TERRARIUM uses the Open-Meteo Geocoding API to resolve
+that city to latitude and longitude and stores the selected location
+locally.
 
-The saved location is then used for local weather, temperature, humidity,
-sunrise/sunset, moonrise/moonset, and timezone offset. This makes the device
-usable worldwide without editing latitude/longitude in the sketch. The same saved location is also used for tide calculations, pressure and precipitation-probability data. If the
-location field is left blank, the previously saved location is retained.
+The saved location is then used for local weather, temperature,
+humidity, sunrise/sunset, moonrise/moonset, and timezone offset. This
+makes the device usable worldwide without editing latitude/longitude in
+the sketch. The same saved location is also used for tide calculations,
+pressure and precipitation-probability data. If the location field is
+left blank, the previously saved location is retained.
 
 SOUND TERRARIUM can store **up to five Wi-Fi networks** and attempts to
 connect to a saved network that is available.
 
-New or updated Wi-Fi credentials are first tested and are stored only after a
-successful connection. If the connection fails, the candidate password is not
-saved or allowed to overwrite an existing credential, and the setup access
-point starts again so the user can retry. The setup page also provides a
-**FORGET ALL** button for clearing the saved Wi-Fi networks.
+New or updated Wi-Fi credentials are first tested and are stored only
+after a successful connection. If the connection fails, the candidate
+password is not saved or allowed to overwrite an existing credential,
+and the setup access point starts again so the user can retry. The setup
+page also provides a **FORGET ALL** button for clearing the saved Wi-Fi
+networks.
 
 While the setup screen is open, the bottom of the Cardputer display
 shows:
@@ -298,41 +327,44 @@ shows:
 Press any physical key to cancel setup and return to normal operation.
 
 > Saved Wi-Fi passwords are not displayed on the setup page. Leaving the
-> password field blank for a saved network reuses its stored password; an open
-> network may use an empty password.
+> password field blank for a saved network reuses its stored password;
+> an open network may use an empty password.
 
 ------------------------------------------------------------------------
 
 ## Browser version
 
-The HTML version mirrors the SOUND TERRARIUM world in a 320 × 240 browser
-canvas and uses the same Open-Meteo-based location, weather and daily ephemeris
-concepts. It provides a **LOCATION SET** field for city-name lookup and, where
-the browser allows it, a **USE CURRENT LOCATION** option. The selected location
-is saved in browser local storage and drives the displayed local date/time,
-weather, temperature/humidity, pressure, precipitation probability, Sun/Moon schedule, and tide information.
+The HTML version mirrors the SOUND TERRARIUM world in a 320 × 240
+browser canvas and uses the same Open-Meteo-based location, weather and
+daily ephemeris concepts. It provides a **LOCATION SET** field for
+city-name lookup and, where the browser allows it, a **USE CURRENT
+LOCATION** option. The selected location is saved in browser local
+storage and drives the displayed local date/time, weather,
+temperature/humidity, pressure, precipitation probability, Sun/Moon
+schedule, and tide information.
 
-Because the browser version is intended as an easy way to try SOUND TERRARIUM,
-its interface and instructions are written in **English** for worldwide use.
-Because a browser has neither the Cardputer ADV's BMI270 step counter nor its
-Wi-Fi access-point state, the browser scene shows **STEP xxxx**, **AP: xxxxxxxx**, and **BAT xx%** as
-layout placeholders rather than inventing values.
-**Detailed information and the visible EQ are hidden by default** so they do
-not cover the generated terrain. Press **I (Information)** to show or hide
-SUN/MOON, tide, TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, BAT, and the 8-band EQ.
-The EQ continues to drive the terrain while its bars are hidden.
-When shown, **LOCATION appears at the bottom-left** of the browser scene. As on
-the Cardputer build, **T and I are independent**: T controls the normal
-date/weekday/time/weather overlay, while I controls SUN/MOON, tide, TEMP/HUM,
-PRES/RAIN, STEP/AP/LOCATION, BAT, and the visible EQ. **STEP is Cardputer-ADV-only** because
-it uses the device's physical BMI270 IMU; the browser version does not simulate
-a step count.
-Browser geolocation requires permission and may be unavailable in some local-file
-or non-secure contexts; city-name lookup remains available. When **USE CURRENT
-LOCATION** is used, the browser provides latitude/longitude and a key-free
-**BigDataCloud reverse-geocoding endpoint** is used only to obtain a readable
-place name when possible; the coordinates remain the fallback if that lookup
-fails.
+Because the browser version is intended as an easy way to try SOUND
+TERRARIUM, its interface and instructions are written in **English** for
+worldwide use. Because a browser has neither the Cardputer ADV's BMI270
+step counter nor its Wi-Fi access-point state, the browser scene shows
+**STEP xxxx**, **AP: xxxxxxxx**, and **BAT xx%** as layout placeholders
+rather than inventing values. **Detailed information and the visible EQ
+are hidden by default** so they do not cover the generated terrain.
+Press **I (Information)** to show or hide SUN/MOON, tide, TEMP/HUM,
+PRES/RAIN, STEP/AP/LOCATION, BAT, and the 8-band EQ. The EQ continues to
+drive the terrain while its bars are hidden. When shown, **LOCATION
+appears at the bottom-left** of the browser scene. As on the Cardputer
+build, **T and I are independent**: T controls the normal
+date/weekday/time/weather overlay, while I controls SUN/MOON, tide,
+TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, BAT, and the visible EQ. **STEP
+is Cardputer-ADV-only** because it uses the device's physical BMI270
+IMU; the browser version does not simulate a step count. Browser
+geolocation requires permission and may be unavailable in some
+local-file or non-secure contexts; city-name lookup remains available.
+When **USE CURRENT LOCATION** is used, the browser provides
+latitude/longitude and a key-free **BigDataCloud reverse-geocoding
+endpoint** is used only to obtain a readable place name when possible;
+the coordinates remain the fallback if that lookup fails.
 
 ------------------------------------------------------------------------
 
@@ -345,8 +377,8 @@ electronic entertainment:
 -   arcade games
 -   early computer graphics
 -   warm sand-colored daytime terrain and primary-blue nighttime terrain
--   retro night skies with mostly white stars, sparse blue/red/yellow stars, and
-    a few independently twinkling points
+-   retro night skies with mostly white stars, sparse blue/red/yellow
+    stars, and a few independently twinkling points
 -   simple pixel-like character animation
 -   antique human-faced Sun and Moon imagery
 
@@ -366,8 +398,8 @@ another sprite. It was a special event --- unexpected, exciting, and
 impossible to forget.
 
 A few years later, as a teenager, I saw **Choplifter!** and **Lode
-Runner** running on the **Apple II** in computer stores in Akihabara.
-I was stunned. A personal computer could create a world like this.
+Runner** running on the **Apple II** in computer stores in Akihabara. I
+was stunned. A personal computer could create a world like this.
 
 But machines such as the Apple II were far too expensive for a child
 like me. Even if I had somehow been able to own one, I probably would
@@ -390,7 +422,7 @@ The little runner, the UFO, the cyan, yellow and magenta, the moving
 terrain and the tiny sky are not there to reproduce those old games.
 They are fragments of the excitement they left behind.
 
-**Back then, I could only watch and play.  
+**Back then, I could only watch and play.\
 More than forty years later, with the arrival of AI, I could finally
 create.**
 
@@ -434,7 +466,8 @@ The current sketch uses Arduino / ESP32 components including:
 -   ESP-IDF I2S API
 -   Open-Meteo
 
-Open-Meteo is used for weather and astronomical schedule data, and the Open-Meteo Marine API is used for tide information.
+Open-Meteo is used for weather and astronomical schedule data, and the
+Open-Meteo Marine API is used for tide information.
 
 ------------------------------------------------------------------------
 
@@ -442,45 +475,62 @@ Open-Meteo is used for weather and astronomical schedule data, and the Open-Mete
 
 Choose the method that fits how you want to use SOUND TERRARIUM.
 
-### M5Launcher / precompiled firmware
+### M5Launcher OTA / precompiled firmware
 
-For users who do not want to compile the sketch, the latest GitHub Release
-includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
-**M5Stack Cardputer ADV**. It has been installed and tested on real hardware
-with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
-saved Wi-Fi reconnection, and the temperature-responsive runner.
+**SOUND TERRARIUM is available directly from the M5Launcher OTA catalog
+for Cardputer ADV.**
 
-**SOUND TERRARIUM v108by is the current Cardputer ADV firmware line.** It adds the Sunday 9 PM special shooting star — a small weekly moment to look back on the past week and make a wish for the week ahead — while retaining the eclipse visual refinement and the Wi-Fi, tide, battery, weather, temperature-responsive runner, and other improvements from the recent v108bs–v108bx releases.
-For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current release
-fits the default 1.2 MB APP partition used by the Cardputer ADV build.
+For the easiest installation, open **M5Launcher**, go to the **OTA**
+catalog, search for **SOUND TERRARIUM**, and install it directly. No
+manual download or SD-card copy is required.
 
-Automatic mirroring from M5Burner to the M5Launcher OTA catalog may take a few
-hours. Until the entry appears in M5Launcher, use M5Burner or install
-`SoundTerrarium.ino.bin` from the latest GitHub Release with M5Launcher.
+The latest GitHub Release also includes `SoundTerrarium.ino.bin`, a
+precompiled firmware image for the **M5Stack Cardputer ADV**. This
+provides an alternative installation method and can be installed
+manually with M5Launcher.
+
+The firmware has been installed and tested on real Cardputer ADV
+hardware with **M5Launcher 2.9.1**, including launch, microphone input,
+Wi-Fi setup, saved Wi-Fi reconnection, and the temperature-responsive
+runner.
+
+**SOUND TERRARIUM v108by is the current Cardputer ADV firmware line.**
+It adds the Sunday 9 PM special shooting star --- a small weekly moment
+to look back on the past week and make a wish for the week ahead ---
+while retaining the eclipse visual refinement and the Wi-Fi, tide,
+battery, weather, temperature-responsive runner, and other improvements
+from the recent v108bs--v108bx releases.
+
+For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current
+release fits the default 1.2 MB APP partition used by the Cardputer ADV
+build.
 
 ### Arduino IDE / source code
 
 For manual installation, development, or modification:
 
-1. Download or clone this repository.
-2. Open `SoundTerrarium/SoundTerrarium.ino` in Arduino IDE.
-3. Select the Cardputer board configuration and compile/upload the sketch to a
-   **M5Stack Cardputer ADV**. The current release compiles within the default
-   **1.2 MB APP** partition in the development environment used for this release.
+1.  Download or clone this repository.
+2.  Open `SoundTerrarium/SoundTerrarium.ino` in Arduino IDE.
+3.  Select the Cardputer board configuration and compile/upload the
+    sketch to a **M5Stack Cardputer ADV**. The current release compiles
+    within the default **1.2 MB APP** partition in the development
+    environment used for this release.
 
 The Arduino and ESP32 components used by the sketch are listed in the
-[Software / services](#software--services) section above. Exact dependency
-versions are not currently pinned; use the precompiled release when you want
-the tested build without recreating the development environment.
+[Software / services](#software--services) section above. Exact
+dependency versions are not currently pinned; use the precompiled
+release when you want the tested build without recreating the
+development environment.
 
-The `.ino` file is the editable source code. The `.bin` file is the compiled
-firmware for users installing through M5Launcher; they are two installation
-routes for the same regular build.
+The `.ino` file is the editable source code. The `.bin` file is also
+provided for manual firmware installation; most M5Launcher users can
+install SOUND TERRARIUM directly from the OTA catalog.
 
 ### No-device option
 
 The browser version requires no Cardputer or firmware installation:
-[open SOUND TERRARIUM Web](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/).
+[open SOUND TERRARIUM
+Web](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/).
 
 ------------------------------------------------------------------------
 
@@ -493,8 +543,8 @@ The EQ is not decoration --- it creates the terrain.
 
 The terrain is not random --- it comes from sound.
 
-The sky is not a looping animation --- it reflects the present moment
-of the selected city.
+The sky is not a looping animation --- it reflects the present moment of
+the selected city.
 
 The tilt is not a meter --- it changes the world the runner lives in.
 
@@ -503,10 +553,10 @@ the core of SOUND TERRARIUM.
 
 ### BONSAI Spirit
 
-SOUND TERRARIUM follows a **BONSAI Spirit**: a small device containing a small
-world, carefully shaped from the capabilities already inside it. The goal is
-not to pile on features, but to let each useful capability become a natural
-part of the terrarium.
+SOUND TERRARIUM follows a **BONSAI Spirit**: a small device containing a
+small world, carefully shaped from the capabilities already inside it.
+The goal is not to pile on features, but to let each useful capability
+become a natural part of the terrarium.
 
 **Small device. Small world. BONSAI Spirit.**
 
@@ -518,9 +568,10 @@ SOUND TERRARIUM is currently in active development and real-device
 testing on the M5Stack Cardputer ADV.
 
 The present build includes the audio-generated terrain system, runner
-animations, IMU interaction, BMI270 reference step counting, real-world weather,
-tide and celestial display, scheduled events, offline fallback, worldwide city-based location selection,
-and browser-based multi-network Wi-Fi setup.
+animations, IMU interaction, BMI270 reference step counting, real-world
+weather, tide and celestial display, scheduled events, offline fallback,
+worldwide city-based location selection, and browser-based multi-network
+Wi-Fi setup.
 
 ------------------------------------------------------------------------
 
@@ -536,23 +587,23 @@ continuously shaped by sound.
 
 ## License, modifications and sharing
 
-SOUND TERRARIUM is released under the **MIT License**. You are welcome to use it,
-modify it, experiment with it, and redistribute your own versions under the
-terms of the license.
+SOUND TERRARIUM is released under the **MIT License**. You are welcome
+to use it, modify it, experiment with it, and redistribute your own
+versions under the terms of the license.
 
-If you create a modified version, I'd appreciate it if you could clearly say
-that it is based on SOUND TERRARIUM, describe what you changed, and share your
-ideas with the community. This is a request rather than an additional condition
-of the MIT License.
+If you create a modified version, I'd appreciate it if you could clearly
+say that it is based on SOUND TERRARIUM, describe what you changed, and
+share your ideas with the community. This is a request rather than an
+additional condition of the MIT License.
 
-My hope is that improvements and new ideas can be seen by others, adapted, and
-developed further, so that SOUND TERRARIUM can continue to evolve through the
-creativity of everyone who plays with it.
+My hope is that improvements and new ideas can be seen by others,
+adapted, and developed further, so that SOUND TERRARIUM can continue to
+evolve through the creativity of everyone who plays with it.
 
-If you publish a modification or improvement under terms that allow it to be
-reused, I may incorporate ideas or code from it into the original SOUND
-TERRARIUM. When I do, I will give appropriate credit to the contributor where
-applicable.
+If you publish a modification or improvement under terms that allow it
+to be reused, I may incorporate ideas or code from it into the original
+SOUND TERRARIUM. When I do, I will give appropriate credit to the
+contributor where applicable.
 
 If you make something interesting, **I'd love to see it!**
 
