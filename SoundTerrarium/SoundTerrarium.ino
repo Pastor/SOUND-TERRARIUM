@@ -1,3 +1,5 @@
+// v108ca: M meteor works at any time; special meteor is yellow on full-black sky and white on any brighter sky; annual showers unchanged.
+// v108bz: add M manual meteor on fully black night sky; make Sunday/M meteor a long warm-yellow smoothly fading special streak; annual showers unchanged.
 // v108by: add a once-a-week Sunday 21:00 special shooting star (night-independent, fair/cloudy only, reuses shower streak geometry).
 // v108bx: refine lunar latitude so an ordinary new Moon is not shown as a solar eclipse.
 // v108bw: add compact meteor-shower nights near six major annual peaks.
@@ -232,6 +234,7 @@ static constexpr float EQ_TERRAIN_VALLEY_Y = 116.0f;
 // ADV keyboard state.
 static bool advKeyboardReady = false;
 void startUfoShift();
+uint16_t skyColorForTime(const tm &t);
 
 // 8 fixed Y-axis colors, bottom cool -> top warm
 static const uint16_t EQ_COLORS[8] = {
@@ -1384,6 +1387,9 @@ static void pollAdvCursorKeys(){
       showClockInfo=!showClockInfo;
     }else if(row==1 && col==7){
       startUfoShift();
+    }else if(row==3 && col==9){
+      // M = Meteor. Manual trigger is always available.
+      specialStarTriggerMs=millis();
     }else if(row==2 && col==3){
       
       // S = Setup. Enter the Wi-Fi setup portal even while already connected.
@@ -2786,31 +2792,56 @@ void drawWeatherAndClock(){
 
   // Weekly Sunday 21:00 special shooting star: a single quiet streak, once a
   // week, as a small "well done this week / here's to next week" moment.
-  // Deliberately independent of day/night (a summer-evening 21:00 can still
-  // be light at high latitudes) and reuses the exact streak geometry/speed
-  // of the annual meteor showers above so no new drawing logic is added.
+  // The same special meteor can also be triggered manually with M at any time.
   {
     int todayKey=(t.tm_year+1900)*10000+(t.tm_mon+1)*100+t.tm_mday; // same key shape as localDateKey()
     bool sundayWindow=(t.tm_wday==0 && t.tm_hour==21 && t.tm_min==0);
     if(sundayWindow && specialStarFiredDateKey!=todayKey){
       specialStarFiredDateKey=todayKey; // this Sunday is consumed either way; no retry until next Sunday
-      bool fairAtTrigger=(weather.mode==WX_CLEAR || weather.mode==WX_CLOUDY); // same allow-list as the shower gate above
+      bool fairAtTrigger=(weather.mode==WX_CLEAR || weather.mode==WX_CLOUDY); // keep the existing Sunday weather gate
       if(fairAtTrigger) specialStarTriggerMs=millis(); // bad weather: stay off for this week
     }
   }
   if(specialStarTriggerMs!=0){
     uint32_t elapsed=millis()-specialStarTriggerMs;
-    const uint32_t SPECIAL_STAR_DURATION_MS=11UL*45UL; // matches the visible p<11 streak range exactly
+    const uint32_t SPECIAL_STAR_DURATION_MS=900UL;
     if(elapsed>=SPECIAL_STAR_DURATION_MS){
-      specialStarTriggerMs=0; // single pass finished; stays off until next Sunday
+      specialStarTriggerMs=0;
     }else{
-      uint8_t p=(uint8_t)(elapsed/45UL);
-      int x=225-(int)p*10;
-      int y=7+(int)p*3;
-      // A few quiet color steps along the same streak: white / pale cyan / white / pale yellow / white.
-      static const uint16_t specialColors[5]={TFT_WHITE,0xB73D,TFT_WHITE,0xFFD7,TFT_WHITE}; // white / pale cyan / white / pale yellow / white
-      uint8_t colorPhase=(uint8_t)((p/2)%5);
-      canvas.drawLine(x,y,x+9,y-4,specialColors[colorPhase]);
+      // Romantic special meteor: warm yellow head, a long tail that begins
+      // narrow, widens gently toward the rear, and fades smoothly into the
+      // CURRENT sky. Annual meteor-shower streaks above are intentionally unchanged.
+      const float q=(float)elapsed/(float)SPECIAL_STAR_DURATION_MS;
+      const float hx=225.0f-q*145.0f;
+      const float hy=9.0f+q*44.0f;
+      const float ux=0.957826f, uy=-0.287348f; // normalized direction (1,-0.30)
+      const float nx=0.287348f, ny=0.957826f;  // perpendicular
+      const int SEG=18;
+      const float LEN=72.0f;
+      const uint16_t sky=skyColorForTime(t);
+      const uint16_t meteorColor=(sky==TFT_BLACK)?0xFFE0:TFT_WHITE;
+
+      for(int i=SEG-1;i>=0;i--){
+        float a=(float)i/(float)SEG, b=(float)(i+1)/(float)SEG;
+        float d0=a*LEN, d1=b*LEN;
+        float w0=0.40f+1.45f*a, w1=0.40f+1.45f*b;
+        float fade=b*b; // continuous rearward fade; 18 small steps avoid visible color bands
+        uint16_t col=mix565(meteorColor,sky,fade);
+        int x0=(int)lroundf(hx+ux*d0), y0=(int)lroundf(hy+uy*d0);
+        int x1=(int)lroundf(hx+ux*d1), y1=(int)lroundf(hy+uy*d1);
+        int ax=(int)lroundf(x0+nx*w0), ay=(int)lroundf(y0+ny*w0);
+        int bx=(int)lroundf(x0-nx*w0), by=(int)lroundf(y0-ny*w0);
+        int cx=(int)lroundf(x1+nx*w1), cy=(int)lroundf(y1+ny*w1);
+        int dx=(int)lroundf(x1-nx*w1), dy=(int)lroundf(y1-ny*w1);
+        canvas.fillTriangle(ax,ay,cx,cy,dx,dy,col);
+        canvas.fillTriangle(ax,ay,dx,dy,bx,by,col);
+      }
+
+      int x=(int)lroundf(hx), y=(int)lroundf(hy);
+      canvas.drawLine(x-2,y,x+2,y,meteorColor);
+      canvas.drawLine(x,y-2,x,y+2,meteorColor);
+      canvas.fillRect(x-1,y-1,3,3,meteorColor);
+      canvas.drawPixel(x,y,TFT_WHITE);
     }
   }
 

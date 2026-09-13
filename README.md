@@ -143,8 +143,25 @@ SOUND TERRARIUM sky.
 It is a small moment at the end of the week --- a time to look back on
 the week that has passed and make a wish for the week ahead. No message
 appears on the screen and no sound announces it. If the weather is clear
-or cloudy, a single softly colored shooting star simply crosses the
-little sky. In rain, snow, or thunder, that week's star remains unseen.
+or cloudy, a single shooting star simply crosses the little sky. In rain,
+snow, or thunder, that week's star remains unseen.
+
+The special meteor now has a longer, gently widening trail that fades
+smoothly into the sky for a more romantic shooting-star effect. Under a
+fully dark sky it glows in warm yellow; against a brighter sky it appears
+white for better visibility.
+
+The same special meteor can also be triggered manually at any time with
+**M (Meteor)**, similar to the manual **U (UFO event)** control. The
+weekly Sunday 9 PM appearance remains automatic, so it can still arrive
+unexpectedly even though the effect is now available on demand.
+
+The Sunday event follows local time rather than the day/night cycle, so the
+shooting star may also appear at 9 PM during bright summer evenings at high
+latitudes.
+
+The existing **major meteor-shower events are unchanged** and remain
+separate from this single special meteor.
 
 For everyone who kept running this week --- including the tiny runner
 inside the terrarium.
@@ -264,6 +281,7 @@ fallback operation where possible.
   **J**   Jump
   **W**   Wave
   **U**   UFO event
+  **M**   Meteor
   **T**   Show / hide date, weekday, clock and weather
   **I**   Show / hide detailed information and EQ (SUN/MOON R/S, tide, TEMP/HUM, PRES/RAIN, STEP, AP/LOCATION, BAT and 8-band EQ)
   **C**   Hold for 3 seconds to reset STEP to 0
@@ -334,7 +352,7 @@ Press any physical key to cancel setup and return to normal operation.
 
 ## Browser version
 
-The HTML version mirrors the SOUND TERRARIUM world in a 320 × 240
+The HTML version mirrors the SOUND TERRARIUM world in a 240 × 135
 browser canvas and uses the same Open-Meteo-based location, weather and
 daily ephemeris concepts. It provides a **LOCATION SET** field for
 city-name lookup and, where the browser allows it, a **USE CURRENT
@@ -494,12 +512,14 @@ hardware with **M5Launcher 2.9.1**, including launch, microphone input,
 Wi-Fi setup, saved Wi-Fi reconnection, and the temperature-responsive
 runner.
 
-**SOUND TERRARIUM v108by is the current Cardputer ADV firmware line.**
-It adds the Sunday 9 PM special shooting star --- a small weekly moment
-to look back on the past week and make a wish for the week ahead ---
-while retaining the eclipse visual refinement and the Wi-Fi, tide,
-battery, weather, temperature-responsive runner, and other improvements
-from the recent v108bs--v108bx releases.
+**SOUND TERRARIUM v108ca is the current Cardputer ADV firmware line.**
+It refines the Sunday 9 PM special shooting star with a longer,
+smoothly fading trail and adds **M (Meteor)** for manual triggering at
+any time. The special meteor appears warm yellow under a fully dark sky
+and white against a brighter sky. Existing major meteor-shower events
+remain unchanged, along with the Wi-Fi, tide, battery, weather,
+temperature-responsive runner, eclipse refinement, and other recent
+improvements.
 
 For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current
 release fits the default 1.2 MB APP partition used by the Cardputer ADV
