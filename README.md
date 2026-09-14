@@ -116,6 +116,29 @@ slide off-screen again under the current tilt physics, the UFO keeps the
 runner safely aboard. The runner is returned to the terrain once the
 current device pose no longer causes that slide.
 
+### Small event sound effects
+
+SOUND TERRARIUM now includes deliberately quiet, retro-style event sound
+effects generated in real time --- no WAV or MP3 assets are stored in the
+firmware.
+
+-   **J (manual jump)**: a very small 8-bit jump chirp. Terrain-triggered
+    automatic jumps remain silent.
+-   **Special shooting star**: a short sparkling trail sound while the
+    star is moving.
+-   **UFO flight**: a low retro pulse while the UFO enters or leaves.
+-   **UFO beam**: a very quiet rising electronic beam sound.
+-   **UFO abduction**: a short synthetic "Aaa!" when the runner begins to
+    rise into the beam.
+
+The effects are intentionally restrained so scheduled events --- including
+late-night UFO appearances --- remain part of the tiny **BONSAI-sized**
+world rather than becoming loud alerts.
+
+Press **X** to toggle all event sound effects. The current **SFX ON / SFX
+OFF** state is shown at the lower-right of the **I (Information)** overlay,
+next to the battery area.
+
 ### A sky connected to the real world
 
 When an Internet connection is available, SOUND TERRARIUM uses
@@ -142,9 +165,10 @@ SOUND TERRARIUM sky.
 
 It is a small moment at the end of the week --- a time to look back on
 the week that has passed and make a wish for the week ahead. No message
-appears on the screen and no sound announces it. If the weather is clear
-or cloudy, a single shooting star simply crosses the little sky. In rain,
-snow, or thunder, that week's star remains unseen.
+appears on the screen. When sound effects are enabled, a small sparkling
+effect follows the shooting star while it crosses the sky. If the weather
+is clear or cloudy, the weekly star appears; in rain, snow, or thunder,
+that week's automatic star remains unseen.
 
 The special meteor now has a longer, gently widening trail that fades
 smoothly into the sky for a more romantic shooting-star effect. Under a
@@ -208,7 +232,7 @@ probability provided by Open-Meteo for the configured location),
 **TEMP/HUM**, daily **SUN/MOON rise/set schedules**, **HIGH/LOW tide
 times**, current **TIDE UP / TIDE DN** direction, **STEP**, the saved
 **LOCATION**, current **AP / Wi-Fi status**, battery level (**BAT**),
-and the visible **8-band EQ**. These are hidden by default to keep the
+current **SFX ON/OFF** state, and the visible **8-band EQ**. These are hidden by default to keep the
 240 × 135 world unobstructed and can be shown or hidden together with
 the **I (Information)** key. **I is independent of T**, so auxiliary
 information can remain visible even when the normal date/clock/weather
@@ -220,7 +244,7 @@ normal scene. When auxiliary information is shown, **HIGH** and **LOW**
 tide times are stacked beneath the SUN/MOON information with a compact
 blue three-line wave symbol. At the bottom-left, **STEP** appears above
 **AP / Wi-Fi status**, with **LOCATION** below it. At the lower-right,
-**BAT** appears below the EQ. The EQ is visible only while **I** is on,
+**BAT** appears below the EQ, with **SFX ON/OFF** aligned to the right edge. The EQ is visible only while **I** is on,
 but its audio analysis continues unchanged while hidden, so the
 sound-generated terrain never stops responding.
 
@@ -282,8 +306,9 @@ fallback operation where possible.
   **W**   Wave
   **U**   UFO event
   **M**   Meteor
+  **X**   Toggle event sound effects (SFX ON / OFF)
   **T**   Show / hide date, weekday, clock and weather
-  **I**   Show / hide detailed information and EQ (SUN/MOON R/S, tide, TEMP/HUM, PRES/RAIN, STEP, AP/LOCATION, BAT and 8-band EQ)
+  **I**   Show / hide detailed information and EQ (SUN/MOON R/S, tide, TEMP/HUM, PRES/RAIN, STEP, AP/LOCATION, BAT, SFX state and 8-band EQ)
   **C**   Hold for 3 seconds to reset STEP to 0
   **S**   Open Wi-Fi SETUP
 
@@ -365,16 +390,16 @@ Because the browser version is intended as an easy way to try SOUND
 TERRARIUM, its interface and instructions are written in **English** for
 worldwide use. Because a browser has neither the Cardputer ADV's BMI270
 step counter nor its Wi-Fi access-point state, the browser scene shows
-**STEP xxxx**, **AP: xxxxxxxx**, and **BAT xx%** as layout placeholders
+**STEP xxxx**, **AP: BROWSER**, and **BAT OK** as browser-only placeholders
 rather than inventing values. **Detailed information and the visible EQ
 are hidden by default** so they do not cover the generated terrain.
 Press **I (Information)** to show or hide SUN/MOON, tide, TEMP/HUM,
-PRES/RAIN, STEP/AP/LOCATION, BAT, and the 8-band EQ. The EQ continues to
+PRES/RAIN, STEP/AP/LOCATION, BAT, SFX state, and the 8-band EQ. The EQ continues to
 drive the terrain while its bars are hidden. When shown, **LOCATION
 appears at the bottom-left** of the browser scene. As on the Cardputer
 build, **T and I are independent**: T controls the normal
 date/weekday/time/weather overlay, while I controls SUN/MOON, tide,
-TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, BAT, and the visible EQ. **STEP
+TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, BAT, SFX state, and the visible EQ. **STEP
 is Cardputer-ADV-only** because it uses the device's physical BMI270
 IMU; the browser version does not simulate a step count. Browser
 geolocation requires permission and may be unavailable in some
@@ -460,13 +485,18 @@ Current target:
 
 -   **M5Stack Cardputer ADV**
 -   Built-in microphone
+-   Built-in speaker
 -   Built-in 240 × 135 display
 -   Built-in keyboard
 -   Built-in BMI270 IMU
 -   Wi-Fi
 
-The current microphone implementation uses the Cardputer ADV audio
-hardware directly, including the ES8311 codec and ESP-IDF I2S path.
+The current audio implementation uses the Cardputer ADV audio hardware
+directly, including the ES8311 codec and ESP-IDF I2S path. The microphone
+RX path and speaker TX path share I2S0 in full-duplex mode without calling
+the M5Unified Speaker/Mic wrappers. Event SFX TX is supplied by a small
+dedicated FreeRTOS task so microphone FFT analysis can continue while an
+effect is playing.
 
 ------------------------------------------------------------------------
 
@@ -482,6 +512,7 @@ The current sketch uses Arduino / ESP32 components including:
 -   HTTPClient
 -   Preferences
 -   ESP-IDF I2S API
+-   FreeRTOS (dedicated SFX TX task)
 -   Open-Meteo
 
 Open-Meteo is used for weather and astronomical schedule data, and the
@@ -512,18 +543,44 @@ hardware with **M5Launcher 2.9.1**, including launch, microphone input,
 Wi-Fi setup, saved Wi-Fi reconnection, and the temperature-responsive
 runner.
 
-**SOUND TERRARIUM v108ca is the current Cardputer ADV firmware line.**
-It refines the Sunday 9 PM special shooting star with a longer,
-smoothly fading trail and adds **M (Meteor)** for manual triggering at
-any time. The special meteor appears warm yellow under a fully dark sky
-and white against a brighter sky. Existing major meteor-shower events
-remain unchanged, along with the Wi-Fi, tide, battery, weather,
-temperature-responsive runner, eclipse refinement, and other recent
-improvements.
+**SOUND TERRARIUM v108ck is the current Cardputer ADV source candidate.**
+It retains the v108ca meteor behavior and adds compact generated event
+sound effects, **X (SFX ON/OFF)**, an SFX status indicator in the
+Information overlay, full-duplex direct I2S audio, and a dedicated SFX TX
+task. To recover flash headroom with the current libraries, the central
+FreeSansBold display uses the 9pt font table with scaling instead of
+linking separate 12pt and 18pt tables.
+
+Since the sound effects were first added, several real-device fixes were
+needed before the audio system worked correctly: the speaker and
+microphone now run together reliably (both were briefly broken at
+different points while this was worked out), short sound effects stop
+cleanly instead of lingering past their intended length, and the
+shooting-star sound was reworked from a repeated sweep --- which turned
+out to sound like a bird call --- into a set of short, irregular sparkle
+pings. The speaker + microphone + SFX system as a whole has been
+confirmed working together on real Cardputer ADV hardware. The current
+shooting-star sound specifically has been checked with an offline audio
+render of the exact same synthesis code, but not yet heard on-device;
+this note will be removed once that's confirmed.
 
 For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current
 release fits the default 1.2 MB APP partition used by the Cardputer ADV
 build.
+
+The last confirmed compile result, from the v108ce milestone before the
+v108cf--v108ck audio fixes above, was:
+
+-   Flash: **1,304,019 / 1,310,720 bytes (99%)** (v108ce)
+-   Free flash space: **6,701 bytes** (v108ce)
+-   Global RAM: **54,972 / 327,680 bytes (16%)** (v108ce)
+-   Available for local variables: **272,708 bytes** (v108ce)
+
+**v108ck build size: pending current compile measurement.** The v108cf--v108ck
+changes are small (a handful of register values, a few lookup tables, no
+new libraries), so flash usage is not expected to move far from the
+figures above, but that has not been measured yet and should not be
+quoted as the current number.
 
 ### Arduino IDE / source code
 
@@ -536,11 +593,11 @@ For manual installation, development, or modification:
     within the default **1.2 MB APP** partition in the development
     environment used for this release.
 
-The Arduino and ESP32 components used by the sketch are listed in the
-[Software / services](#software--services) section above. Exact
-dependency versions are not currently pinned; use the precompiled
-release when you want the tested build without recreating the
-development environment.
+The v108ck source was built in the same environment used for the v108ce
+milestone above: **M5Stack ESP32 BSP 3.3.9**, **M5GFX 0.2.29**, and
+**M5Unified 0.2.22**. The Arduino and ESP32 components used by the sketch
+are listed in the [Software / services](#software--services) section
+above.
 
 The `.ino` file is the editable source code. The `.bin` file is also
 provided for manual firmware installation; most M5Launcher users can
@@ -587,11 +644,12 @@ become a natural part of the terrarium.
 SOUND TERRARIUM is currently in active development and real-device
 testing on the M5Stack Cardputer ADV.
 
-The present build includes the audio-generated terrain system, runner
-animations, IMU interaction, BMI270 reference step counting, real-world
-weather, tide and celestial display, scheduled events, offline fallback,
-worldwide city-based location selection, and browser-based multi-network
-Wi-Fi setup.
+The present source candidate includes the audio-generated terrain
+system, runner animations, IMU interaction, BMI270 reference step
+counting, real-world weather, tide and celestial display, scheduled
+events, generated event sound effects with X-controlled SFX state,
+offline fallback, worldwide city-based location selection, and
+browser-based multi-network Wi-Fi setup.
 
 ------------------------------------------------------------------------
 

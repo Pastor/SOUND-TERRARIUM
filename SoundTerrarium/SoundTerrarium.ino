@@ -1,3 +1,22 @@
+// v108cf: route mono SFX to BOTH I2S TX slots for ES8311 speaker compatibility; mic RX remains LEFT.
+// v108cg: ES8311 REG01 (CLOCK_MANAGER) 0xBA->0xB5, matching M5Unified's official
+// Cardputer ADV speaker-enable sequence exactly (see setupBruceADVCodecMic()).
+// This is the only byte that differed from the official DAC-enable recipe.
+// v108ch: DAC volume (REG32) lowered from unity gain (0xBF) to 0xB0; see
+// setupBruceADVCodecMic() for details. Sound now confirmed working on real
+// hardware; this only tunes loudness.
+// v108ci: serviceSfx() now flushes ~9 silent 128-sample blocks (enough to
+// drain the whole DMA ring) when a one-shot effect ends, instead of one.
+// Fixes short SFX (jump/star/abduct) audibly continuing past their duration.
+// v108cj: REG01 (CLOCK_MANAGER) changed from v108cg's 0xB5 to 0xBF. 0xB5 was
+// M5Unified's official *speaker-only* value and silenced mic capture (ADC
+// clocks were off in that value). 0xBF = 0xBA|0xB5 keeps every bit that's on
+// in either the official mic-only or speaker-only value, so ADC and DAC
+// clocks are both enabled for true simultaneous mic RX + speaker TX. See
+// setupBruceADVCodecMic() for the bit-by-bit reasoning.
+// v108ck: shooting-star SFX (fx==2) reworked from one repeated descending
+// sweep (sounded like a bird call) into 7 irregular decaying pings; see
+// STAR_EV_* tables and the fx==2 branch in serviceSfx().
 // v108ca: M meteor works at any time; special meteor is yellow on full-black sky and white on any brighter sky; annual showers unchanged.
 // v108bz: add M manual meteor on fully black night sky; make Sunday/M meteor a long warm-yellow smoothly fading special streak; annual showers unchanged.
 // v108by: add a once-a-week Sunday 21:00 special shooting star (night-independent, fair/cloudy only, reuses shower streak geometry).
@@ -136,6 +155,7 @@ static constexpr int ADV_I2C_SCL = 9;
 static constexpr gpio_num_t ADV_MIC_BCLK = GPIO_NUM_41;
 static constexpr gpio_num_t ADV_MIC_WS   = GPIO_NUM_43;
 static constexpr gpio_num_t ADV_MIC_DIN  = GPIO_NUM_46;
+static constexpr gpio_num_t ADV_SPK_DOUT = GPIO_NUM_42;
 
 // Cardputer ADV keyboard controller shares the same internal I2C bus.
 static constexpr uint8_t TCA8418_ADDR = 0x34;
@@ -410,7 +430,7 @@ static int ephemerisDateKey = 0;
 // persistence. specialStarTriggerMs!=0 means the single streak animation is
 // currently playing; it is cleared once that short animation finishes.
 static int specialStarFiredDateKey = 0;
-static uint32_t specialStarTriggerMs = 0;
+static volatile uint32_t specialStarTriggerMs = 0;
 
 bool weatherOK = false;
 
@@ -441,6 +461,25 @@ static constexpr uint32_t TIDE_RETRY_MS = 30UL*60UL*1000UL;
 // It follows the working Bruce 1.16.1 Cardputer ADV path:
 // ES8311 setup over Wire1 + ESP-IDF new I2S channel API.
 static i2s_chan_handle_t micChan = nullptr;
+static i2s_chan_handle_t spkChan = nullptr;
+
+// Tiny generated SFX. No WAV/PCM assets are stored in flash.
+static volatile bool sfxEnabled=true;
+static volatile uint32_t jumpSfxStartMs=0, abductSfxStartMs=0;
+static uint32_t sfxPhase1=0, sfxPhase2=0, sfxPhase3=0;
+static int16_t sfxBuf[128];
+
+// v108ck: shooting-star SFX replaced. The old version repeated one identical
+// 150ms descending sweep 6 times, which read as a bird call. This is 7 short
+// decaying "pings" with irregular timing and pitch (each starting where its
+// own index says, gaps deliberately uneven, no two pings the same pitch) so
+// nothing about it repeats predictably. Confirmed by ear via a WAV render of
+// this exact table before wiring it in. Total span 899ms, fits the existing
+// 900ms SPECIAL_STAR_DURATION_MS window unchanged.
+static const uint16_t STAR_EV_START[7]={0,135,253,407,516,662,789};
+static const uint16_t STAR_EV_DUR[7]  ={130,110,150,100,140,120,110};
+static const uint16_t STAR_EV_HZ[7]   ={5200,7100,4400,6300,5000,6800,5900};
+static const uint16_t STAR_EV_AMP[7]  ={650,600,700,550,650,600,620};
 static int16_t audioBuf[AUDIO_N];
 static bool micReady = false;
 static int16_t rawPeak = 0;
@@ -1175,7 +1214,21 @@ static bool setupBruceADVCodecMic(){
   // boards/m5stack-cardputer/interface.cpp::_setup_codec_mic().
   bool ok = true;
   ok &= es8311Write(0x00, 0x80);
-  ok &= es8311Write(0x01, 0xBA);
+  // v108cg tried REG01=0xB5 (M5Unified's official Cardputer ADV *speaker-only*
+  // value) to fix total silence; see v108cj below for why that alone broke
+  // the mic, and the corrected combined value.
+  // v108cj: REG01 changed again, this time from B5 to 0xBF.
+  // Per the ES8311 datasheet's REG01 (CLOCK_MANAGER) bit table:
+  //   bit7 MCLK_SEL=1 (from BCLK), bit6 MCLK_INV=0, bit5 MCLK_ON=1,
+  //   bit4 BCLK_ON=1   <- identical in both 0xBA and 0xB5, shared clock path
+  //   bit3 CLKADC_ON, bit1 ANACLKADC_ON  <- set in 0xBA (mic-only), clear in 0xB5
+  //   bit2 CLKDAC_ON, bit0 ANACLKDAC_ON  <- set in 0xB5 (speaker-only), clear in 0xBA
+  // 0xBA (mic) and 0xB5 (speaker) only ever differ in these four ADC/DAC
+  // clock-enable bits, which are independent per-block gates. v108cg's 0xB5
+  // silenced the mic (ADC clocks off) because Bruce's mic-only value never
+  // included them. Since we need mic RX and speaker TX running at once,
+  // both sets of enable bits must be on together: 0xBA | 0xB5 = 0xBF.
+  ok &= es8311Write(0x01, 0xBF);
   ok &= es8311Write(0x02, 0x18);
   ok &= es8311Write(0x0D, 0x01);
   ok &= es8311Write(0x0E, 0x02);
@@ -1191,6 +1244,15 @@ static bool setupBruceADVCodecMic(){
   // Keep ADC digital volume at Bruce's 0 dB value to avoid unnecessary clipping.
   ok &= es8311Write(0x17, 0xBF);
   ok &= es8311Write(0x1C, 0x6A);
+  // Keep the Bruce mic path, but also power the DAC for generated effects.
+  ok &= es8311Write(0x12, 0x00);
+  ok &= es8311Write(0x13, 0x10);
+  // v108ch: 0xBF was unity gain (±0 dB, M5Unified's reference value) and was
+  // too loud for these short SFX. Each step here is roughly 1 dB, so 0xB0
+  // is about -15 dB. Purely a volume knob: raise/lower this byte to taste,
+  // it does not touch the mic (ADC volume is the separate REG17 above).
+  ok &= es8311Write(0x32, 0xB0);
+  ok &= es8311Write(0x37, 0x08);
   delay(20);
   return ok;
 }
@@ -1209,8 +1271,7 @@ static bool initBruceADVMicrophone(){
   chanCfg.dma_desc_num = 8;
   chanCfg.dma_frame_num = 124;
 
-  esp_err_t err = i2s_new_channel(&chanCfg, nullptr, &micChan);
-  if(err != ESP_OK) return false;
+  if(i2s_new_channel(&chanCfg,&spkChan,&micChan)!=ESP_OK) return false;
 
   i2s_std_config_t cfg;
   memset(&cfg, 0, sizeof(cfg));
@@ -1238,19 +1299,17 @@ static bool initBruceADVMicrophone(){
   cfg.gpio_cfg.invert_flags.bclk_inv = false;
   cfg.gpio_cfg.invert_flags.ws_inv = false;
 
-  err = i2s_channel_init_std_mode(micChan, &cfg);
-  if(err != ESP_OK){
-    i2s_del_channel(micChan);
-    micChan = nullptr;
-    return false;
-  }
+  if(i2s_channel_init_std_mode(micChan,&cfg)!=ESP_OK) return false;
 
-  err = i2s_channel_enable(micChan);
-  if(err != ESP_OK){
-    i2s_del_channel(micChan);
-    micChan = nullptr;
-    return false;
-  }
+  // ESP32-S3 standard I2S mono TX should feed both wire slots.
+  // M5Unified's speaker path also uses I2S_STD_SLOT_BOTH.
+  // Keep mic RX on LEFT, but duplicate the mono SFX stream to L/R for ES8311.
+  cfg.slot_cfg.slot_mask=I2S_STD_SLOT_BOTH;
+  cfg.gpio_cfg.dout=ADV_SPK_DOUT;
+  cfg.gpio_cfg.din=I2S_GPIO_UNUSED;
+  if(i2s_channel_init_std_mode(spkChan,&cfg)!=ESP_OK) return false;
+  if(i2s_channel_enable(micChan)!=ESP_OK) return false;
+  if(i2s_channel_enable(spkChan)!=ESP_OK) return false;
 
   memset(audioBuf, 0, sizeof(audioBuf));
   return true;
@@ -1364,13 +1423,17 @@ static void pollAdvCursorKeys(){
     // Physical keys on Cardputer ADV (zero-based physical row/column):
     // ';' / UP marking = row 2, col 11
     // '.' / DOWN marking = row 3, col 11
-    // QWERTY row is 1-based here: W=2, T=5, U=7, I=8. J=row2,col8; S=row2,col3
+    // QWERTY mapping: W/T/U/I on row 1; J/S on row 2; X on row 3,col4.
     if(row==2 && col==8){
       if(!ufo.active && runner.state==RS_RUN){
         runner.state=RS_JUMP;
         runner.stateT=0;
         runner.y=groundAt((int)runner.x+5)-11;
+        jumpSfxStartMs=millis();
       }
+    }else if(row==3 && col==4){
+      // X = SFX ON/OFF.
+      sfxEnabled=!sfxEnabled;
     }else if(row==1 && col==2){
       // Manual WAVE: reuse exactly the same RS_WAVE animation as the scheduled wave.
       if(!ufo.active && runner.state==RS_RUN){
@@ -1408,6 +1471,84 @@ static void pollAdvCursorKeys(){
 
   // Clear key-event interrupt status after draining the FIFO.
   (void)tcaWrite(TCA_REG_INT_STAT,0x01);
+}
+
+
+// ---------------- Generated sound effects ----------------
+static inline int16_t sfxSquare(uint32_t &ph,uint32_t hz,int amp){
+  ph+=hz;
+  if(ph>=SAMPLE_RATE) ph-=SAMPLE_RATE;
+  return ph<(SAMPLE_RATE>>1)?amp:-amp;
+}
+
+static bool serviceSfx(){
+  if(!spkChan) return false;
+  static bool sounding=false;
+  uint32_t now=millis(),age=0; uint8_t fx=0;
+  if(sfxEnabled){
+    if(abductSfxStartMs && (age=now-abductSfxStartMs)<860) fx=5;
+    else if(ufo.active && ufo.beam>0 && ufo.beamProgress>0){ fx=4; age=now; }
+    else if(ufo.active && (ufo.phase==UFO_ENTER_LEFT || ufo.phase==UFO_EXIT_RIGHT || ufo.phase==UFO_RETURN_RIGHT || ufo.phase==UFO_RETURN_LEFT || ufo.phase==UFO_LEAVE_LEFT)){ fx=3; age=now; }
+    else if(specialStarTriggerMs && (age=now-specialStarTriggerMs)<900) fx=2;
+    else if(jumpSfxStartMs && (age=now-jumpSfxStartMs)<200) fx=1;
+  }
+  if(!fx){
+    if(!sounding) return false;
+    sounding=false;
+    // v108ci: flush enough silence to fully drain the DMA ring
+    // (dma_desc_num*dma_frame_num = 8*124 = 992 samples ~= 20.7 ms), not just
+    // one 128-sample block. If sfxTask was ever briefly delayed while a
+    // non-zero waveform was still queued, the I2S TX driver can keep
+    // replaying whatever it last had once it runs dry; a single silent
+    // block does not reliably out-race audio already sitting in the ring.
+    // This is why short one-shot effects (jump/star/abduct) could keep
+    // sounding after their nominal duration.
+    memset(sfxBuf,0,sizeof(sfxBuf));
+    size_t wr;
+    for(int flush=0; flush<9; flush++){ // 9*128=1152 samples > 992-sample ring depth
+      i2s_channel_write(spkChan,sfxBuf,sizeof(sfxBuf),&wr,portMAX_DELAY);
+    }
+    return true;
+  }
+  sounding=true;
+  for(int i=0;i<128;i++){
+    uint32_t hz; int amp;
+    if(fx==1){ uint32_t p=age<199?age:199; hz=330+(650*(p/25))/7; amp=500; }
+    else if(fx==2){
+      // v108ck: irregular decaying pings instead of one repeated sweep.
+      int active=-1;
+      for(int e=0;e<7;e++){
+        if(age>=STAR_EV_START[e] && age<(uint32_t)(STAR_EV_START[e]+STAR_EV_DUR[e])){ active=e; break; }
+      }
+      if(active<0){ hz=1; amp=0; }
+      else{
+        uint32_t local=age-STAR_EV_START[active];
+        hz=STAR_EV_HZ[active];
+        amp=(int)((uint32_t)STAR_EV_AMP[active]*(STAR_EV_DUR[active]-local)/STAR_EV_DUR[active]);
+      }
+    }
+    else if(fx==3){ hz=((age/125)&1)?445:275; amp=450; }
+    else if(fx==4){ uint32_t p=age%800; hz=760+(21*p)/16; amp=220; }
+    else{
+      uint32_t p=age<859?age:859;
+      hz=212+(p<430?(12*p)/430:12-(8*(p-430))/430);
+      int e=p<650?500:(500*(860-p))/210;
+      int32_t v=3*sfxSquare(sfxPhase1,hz,e)+sfxSquare(sfxPhase2,720,e/2)+sfxSquare(sfxPhase3,1120,e/3);
+      sfxBuf[i]=(int16_t)(v>>2); continue;
+    }
+    sfxBuf[i]=sfxSquare(sfxPhase1,hz,amp);
+  }
+  size_t wr;
+  i2s_channel_write(spkChan,sfxBuf,sizeof(sfxBuf),&wr,portMAX_DELAY);
+  return true;
+}
+
+static void sfxTask(void*){
+  for(;;){
+    // Active writes block until DMA accepts data, naturally pacing at 48 kHz.
+    // When no effect is active, sleep briefly instead of spinning.
+    if(!serviceSfx()) vTaskDelay(pdMS_TO_TICKS(2));
+  }
 }
 
 // ---------------- Audio analysis ----------------
@@ -2212,6 +2353,7 @@ void updateUfo(){
     if(ufo.phaseT>12){
       ufo.phase=UFO_ABDUCT;
       ufo.phaseT=0;
+      abductSfxStartMs=millis();
     }
   }else if(ufo.phase==UFO_ABDUCT){
     ufo.beam=1;
@@ -3104,8 +3246,15 @@ void drawClockInfoOverlay(){
     canvas.setFont(&fonts::Font0);
     canvas.setTextSize(1);
     canvas.setTextColor(batColor);
-    canvas.setTextDatum(bottom_left);
-    canvas.drawString(batText,EQ_GEN_LEFT,H-2);
+    if(showAuxInfo){
+      const char *sx=sfxEnabled?"SFX ON":"SFX OFF";
+      canvas.setTextDatum(bottom_right);
+      canvas.drawString(sx,W-2,H-2);
+      canvas.drawString(batText,W-5-canvas.textWidth(sx),H-2);
+    }else{
+      canvas.setTextDatum(bottom_left);
+      canvas.drawString(batText,EQ_GEN_LEFT,H-2);
+    }
   }
 
   if(showClockInfo){
@@ -3129,8 +3278,8 @@ void drawClockInfoOverlay(){
     canvas.setTextColor(dateColor);
     canvas.drawString(db,clockX,39);
 
-    canvas.setFont(&fonts::FreeSansBold18pt7b);
-    canvas.setTextSize(8.0f/9.0f);
+    canvas.setFont(&fonts::FreeSansBold9pt7b);
+    canvas.setTextSize(16.0f/9.0f);
     canvas.setTextColor(timeColor);
     canvas.drawString(tb,clockX,53);
 
@@ -3251,7 +3400,8 @@ static void drawWiFiSetupScreen(){
   canvas.setTextDatum(top_center);
 
   canvas.setTextColor(TFT_WHITE);
-  canvas.setFont(&fonts::FreeSansBold12pt7b);
+  canvas.setFont(&fonts::FreeSansBold9pt7b);
+  canvas.setTextSize(4.0f/3.0f);
   canvas.drawString("SOUND TERRARIUM",W/2,10);
 
   canvas.setFont(&fonts::Font0);
@@ -3897,8 +4047,11 @@ void setup(){
   // Initialize BMI270 first without M5.begin()/M5Cardputer.begin().
   imuReady=initAdvImuOnce();
 
-  // Bruce 1.16.1 ADV microphone path, with I2S0 untouched by M5Cardputer.begin().
+  // Bruce-style ADV full-duplex I2S0: mic RX + direct speaker TX.
   micReady = initBruceADVMicrophone();
+  if(micReady && spkChan){
+    xTaskCreatePinnedToCore(sfxTask,"sfx",2048,nullptr,1,nullptr,0);
+  }
 
   canvas.setColorDepth(16);
   if(!canvas.createSprite(W,H)){
