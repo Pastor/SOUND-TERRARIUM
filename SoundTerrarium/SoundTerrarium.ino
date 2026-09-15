@@ -1,3 +1,4 @@
+// v108cm: UFO flight SFX changed to approved Space-Invaders-style fast VCO warble; no other behavior changed.
 // v108cf: route mono SFX to BOTH I2S TX slots for ES8311 speaker compatibility; mic RX remains LEFT.
 // v108cg: ES8311 REG01 (CLOCK_MANAGER) 0xBA->0xB5, matching M5Unified's official
 // Cardputer ADV speaker-enable sequence exactly (see setupBruceADVCodecMic()).
@@ -17,6 +18,7 @@
 // v108ck: shooting-star SFX (fx==2) reworked from one repeated descending
 // sweep (sounded like a bird call) into 7 irregular decaying pings; see
 // STAR_EV_* tables and the fx==2 branch in serviceSfx().
+// v108cl: add restrained ground-perspective grains and WAV-referenced shooting-star SFX.
 // v108ca: M meteor works at any time; special meteor is yellow on full-black sky and white on any brighter sky; annual showers unchanged.
 // v108bz: add M manual meteor on fully black night sky; make Sunday/M meteor a long warm-yellow smoothly fading special streak; annual showers unchanged.
 // v108by: add a once-a-week Sunday 21:00 special shooting star (night-independent, fair/cloudy only, reuses shower streak geometry).
@@ -431,6 +433,7 @@ static int ephemerisDateKey = 0;
 // currently playing; it is cleared once that short animation finishes.
 static int specialStarFiredDateKey = 0;
 static volatile uint32_t specialStarTriggerMs = 0;
+static volatile uint32_t specialStarSfxTriggerMs = 0; // independent 2.43 s SFX clock
 
 bool weatherOK = false;
 
@@ -469,17 +472,38 @@ static volatile uint32_t jumpSfxStartMs=0, abductSfxStartMs=0;
 static uint32_t sfxPhase1=0, sfxPhase2=0, sfxPhase3=0;
 static int16_t sfxBuf[128];
 
-// v108ck: shooting-star SFX replaced. The old version repeated one identical
-// 150ms descending sweep 6 times, which read as a bird call. This is 7 short
-// decaying "pings" with irregular timing and pitch (each starting where its
-// own index says, gaps deliberately uneven, no two pings the same pitch) so
-// nothing about it repeats predictably. Confirmed by ear via a WAV render of
-// this exact table before wiring it in. Total span 899ms, fits the existing
-// 900ms SPECIAL_STAR_DURATION_MS window unchanged.
-static const uint16_t STAR_EV_START[7]={0,135,253,407,516,662,789};
-static const uint16_t STAR_EV_DUR[7]  ={130,110,150,100,140,120,110};
-static const uint16_t STAR_EV_HZ[7]   ={5200,7100,4400,6300,5000,6800,5900};
-static const uint16_t STAR_EV_AMP[7]  ={650,600,700,550,650,600,620};
+// Shooting-star SFX: compact additive reconstruction of the supplied
+// SOUND_TERRARIUM_shooting_star_v1.wav. The reference is ~2.43 s long:
+// a bright ~2.1/5.6/8.4 kHz "KIRAAN" onset followed by overlapping,
+// progressively quieter 2.6-4.2 kHz shimmer and sparse high glints.
+struct StarTone {
+  uint16_t startMs, durMs, hz0, hz1, amp;
+};
+static const StarTone STAR_TONES[] = {
+  {   0,1050,2092,2364,520},
+  {   0, 820,5600,5376,335},
+  {   0, 680,8400,7812,245},
+  {  50, 960,2350,2585,305},
+  { 130,1180,4200,4158,365},
+  { 280,1150,3975,4094,150},
+  { 340,1050,2642,2853,180},
+  { 430, 960,4725,4630,120},
+  { 570,1120,3333,3466,150},
+  { 680, 940,2650,2836,150},
+  { 780, 900,4458,4369,105},
+  { 920, 880,2808,2976,135},
+  {1020, 820,3533,3604,105},
+  {1180, 780,7475,7101, 75},
+  {1280, 720,2625,2756,105},
+  {1430, 660,3167,3262, 90},
+  {1580, 600,7000,6720, 68},
+  {1720, 520,2633,2712, 82},
+  {1880, 420,7475,7176, 52},
+  {1300, 900,1400,1372, 52},
+  {1620, 680,1317,1317, 42}
+};
+static constexpr int STAR_TONE_COUNT=sizeof(STAR_TONES)/sizeof(STAR_TONES[0]);
+static uint32_t starTonePhase[STAR_TONE_COUNT]={0};
 static int16_t audioBuf[AUDIO_N];
 static bool micReady = false;
 static int16_t rawPeak = 0;
@@ -526,6 +550,53 @@ static bool visibleEqTopReady = false;
 // while restoring a calmer runner animation/motion.
 static constexpr float RUNNER_MOTION_SCALE = 0.75f;
 static float runnerMotionPhase = 0.0f;
+
+
+// ---------------- Ground perspective grains ----------------
+// HTML-approved perceptual spec: 14 grains total (6 far / 5 middle / 3 near),
+// sizes 1/2/3 px, speed ratios 1.0/1.7/2.7 relative to terrain.
+// Day grains are black; night grains are dark navy. A no-grain band is kept
+// immediately below the current tilted terrain surface.
+struct GroundDot {
+  float x;
+  uint8_t y;
+  uint8_t tier;
+  float extraPhase;
+};
+static GroundDot groundDots[14];
+static bool groundDotsReady=false;
+
+static void resetGroundDotByIndex(int idx,bool fromRight){
+  GroundDot &d=groundDots[idx];
+  if(d.tier==0) d.y=(uint8_t)(101+random(0,8));
+  else if(d.tier==1) d.y=(uint8_t)(110+random(0,10));
+  else d.y=(uint8_t)(122+random(0,12));
+  d.x=fromRight ? (float)(W+random(0,24)) : (float)random(0,W);
+  d.extraPhase=0.0f;
+}
+
+static void initGroundDots(){
+  int n=0;
+  for(int i=0;i<6;i++){ groundDots[n].tier=0; resetGroundDotByIndex(n++,false); }
+  for(int i=0;i<5;i++){ groundDots[n].tier=1; resetGroundDotByIndex(n++,false); }
+  for(int i=0;i<3;i++){ groundDots[n].tier=2; resetGroundDotByIndex(n++,false); }
+  groundDotsReady=true;
+}
+
+// Called once for every actual 1-pixel terrain shift. Far grains therefore
+// move exactly with the terrain; middle/near grains receive only the extra
+// fractional movement needed to reach 1.7x / 2.7x total speed.
+static void advanceGroundDotsOneTerrainPixel(){
+  if(!groundDotsReady) initGroundDots();
+  for(int i=0;i<14;i++){
+    GroundDot &d=groundDots[i];
+    float ratio=(d.tier==0)?1.0f:((d.tier==1)?1.7f:2.7f);
+    d.x-=1.0f;
+    d.extraPhase+=(ratio-1.0f);
+    while(d.extraPhase>=1.0f){ d.x-=1.0f; d.extraPhase-=1.0f; }
+    if(d.x < -3.0f) resetGroundDotByIndex(i,true);
+  }
+}
 
 // ---------------- Utility ----------------
 static inline int clampi(int v,int a,int b){ return v<a?a:(v>b?b:v); }
@@ -1452,7 +1523,11 @@ static void pollAdvCursorKeys(){
       startUfoShift();
     }else if(row==3 && col==9){
       // M = Meteor. Manual trigger is always available.
-      specialStarTriggerMs=millis();
+      {
+        uint32_t now=millis();
+        specialStarTriggerMs=now;
+        specialStarSfxTriggerMs=now;
+      }
     }else if(row==2 && col==3){
       
       // S = Setup. Enter the Wi-Fi setup portal even while already connected.
@@ -1489,7 +1564,7 @@ static bool serviceSfx(){
     if(abductSfxStartMs && (age=now-abductSfxStartMs)<860) fx=5;
     else if(ufo.active && ufo.beam>0 && ufo.beamProgress>0){ fx=4; age=now; }
     else if(ufo.active && (ufo.phase==UFO_ENTER_LEFT || ufo.phase==UFO_EXIT_RIGHT || ufo.phase==UFO_RETURN_RIGHT || ufo.phase==UFO_RETURN_LEFT || ufo.phase==UFO_LEAVE_LEFT)){ fx=3; age=now; }
-    else if(specialStarTriggerMs && (age=now-specialStarTriggerMs)<900) fx=2;
+    else if(specialStarSfxTriggerMs && (age=now-specialStarSfxTriggerMs)<2430) fx=2;
     else if(jumpSfxStartMs && (age=now-jumpSfxStartMs)<200) fx=1;
   }
   if(!fx){
@@ -1511,23 +1586,47 @@ static bool serviceSfx(){
     return true;
   }
   sounding=true;
+  // UFO frequency is constant across this 128-sample DMA block because `age`
+  // is computed once per serviceSfx() call. Compute the nonlinear sweep once
+  // here instead of repeating the same powf() for every sample.
+  uint32_t ufoHz=0;
+  if(fx==3){
+    uint32_t p=age%190;
+    float tri=(p<95)?((float)p/95.0f):((float)(190-p)/95.0f);
+    float ctrl=powf(tri,1.18f);
+    ufoHz=(uint32_t)(640.0f+760.0f*ctrl);
+  }
   for(int i=0;i<128;i++){
     uint32_t hz; int amp;
     if(fx==1){ uint32_t p=age<199?age:199; hz=330+(650*(p/25))/7; amp=500; }
     else if(fx==2){
-      // v108ck: irregular decaying pings instead of one repeated sweep.
-      int active=-1;
-      for(int e=0;e<7;e++){
-        if(age>=STAR_EV_START[e] && age<(uint32_t)(STAR_EV_START[e]+STAR_EV_DUR[e])){ active=e; break; }
+      // Layered bell/shimmer. Each partial keeps its own phase so overlapping
+      // components remain continuous across 128-sample DMA blocks.
+      int32_t mix=0;
+      for(int e=0;e<STAR_TONE_COUNT;e++){
+        const StarTone &st=STAR_TONES[e];
+        if(age<st.startMs || age>=(uint32_t)(st.startMs+st.durMs)) continue;
+        uint32_t local=age-st.startMs;
+        uint32_t hz=st.hz0 + ((int32_t)st.hz1-(int32_t)st.hz0)*(int32_t)local/(int32_t)st.durMs;
+        // Fast attack, then long linear decay; compact and cheap on ESP32-S3.
+        uint32_t attack=local<12 ? local : 12;
+        int env=(int)((uint32_t)st.amp*attack/12);
+        env=(int)((uint32_t)env*(st.durMs-local)/st.durMs);
+        mix+=sfxSquare(starTonePhase[e],hz,env);
       }
-      if(active<0){ hz=1; amp=0; }
-      else{
-        uint32_t local=age-STAR_EV_START[active];
-        hz=STAR_EV_HZ[active];
-        amp=(int)((uint32_t)STAR_EV_AMP[active]*(STAR_EV_DUR[active]-local)/STAR_EV_DUR[active]);
-      }
+      if(mix>32767) mix=32767;
+      if(mix<-32768) mix=-32768;
+      sfxBuf[i]=(int16_t)mix;
+      continue;
     }
-    else if(fx==3){ hz=((age/125)&1)?445:275; amp=450; }
+    else if(fx==3){
+      // v108cm: Space-Invaders-style UFO flight sound, matched to the approved
+      // Web version: fast ~5.25 Hz triangle sweep driving a hard square VCO.
+      // ufoHz is calculated once per DMA block above; the generated waveform
+      // and per-sample phase progression are unchanged.
+      hz=ufoHz;
+      amp=450;
+    }
     else if(fx==4){ uint32_t p=age%800; hz=760+(21*p)/16; amp=220; }
     else{
       uint32_t p=age<859?age:859;
@@ -1768,6 +1867,7 @@ void updateWorld(){
 
     // Existing road keeps its shape and moves one pixel left.
     for(int x=0;x<W-1;x++) terrain[x]=terrain[x+1];
+    advanceGroundDotsOneTerrainPixel();
 
     // New road is born at the red/rightmost station height.
     float redY=visibleEqTopReady?(float)visibleEqTopY[7]:EQ_TERRAIN_VALLEY_Y;
@@ -2941,7 +3041,11 @@ void drawWeatherAndClock(){
     if(sundayWindow && specialStarFiredDateKey!=todayKey){
       specialStarFiredDateKey=todayKey; // this Sunday is consumed either way; no retry until next Sunday
       bool fairAtTrigger=(weather.mode==WX_CLEAR || weather.mode==WX_CLOUDY); // keep the existing Sunday weather gate
-      if(fairAtTrigger) specialStarTriggerMs=millis(); // bad weather: stay off for this week
+      if(fairAtTrigger){
+        uint32_t now=millis();
+        specialStarTriggerMs=now;
+        specialStarSfxTriggerMs=now;
+      } // bad weather: stay off for this week
     }
   }
   if(specialStarTriggerMs!=0){
@@ -3297,6 +3401,23 @@ void drawClockInfoOverlay(){
   canvas.setTextDatum(top_left);
 }
 
+void drawGroundPerspectiveDots(bool day){
+  if(!groundDotsReady) initGroundDots();
+  const uint16_t dotColor=day ? TFT_BLACK : canvas.color565(0,0,102); // #000066
+  for(int i=0;i<14;i++){
+    const GroundDot &d=groundDots[i];
+    int x=clampi((int)roundf(d.x),0,W-1);
+    int surfaceY=displayGroundAt(x);
+    int groundDepth=TERRAIN_BOTTOM-surfaceY+1;
+    if(groundDepth<=0) continue;
+    float depthRatio=((float)d.y-(float)surfaceY)/(float)groundDepth;
+    float minDepth=(d.tier==0)?0.26f:((d.tier==1)?0.43f:0.62f);
+    if(depthRatio<minDepth || d.y>TERRAIN_BOTTOM) continue;
+    int sz=(int)d.tier+1;
+    canvas.fillRect((int)roundf(d.x),(int)d.y,sz,sz,dotColor);
+  }
+}
+
 void drawTerrain(){
   // v92: terrain is the exact inverse of the current sky-text ink.
   // Bright sky -> black text + white terrain.
@@ -3315,6 +3436,8 @@ void drawTerrain(){
       canvas.drawFastVLine(x,top,TERRAIN_BOTTOM-top+1,ground);
     }
   }
+
+  drawGroundPerspectiveDots(day);
 
   // Road edge uses the same ink color as the clock/HUD, i.e. the opposite
   // of the ground, so the 1 px surface remains visible in both phases.

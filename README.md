@@ -99,6 +99,7 @@ bottom-left, directly above **AP / Wi-Fi status** and **LOCATION**. Hold
 -   The eight EQ band heights directly generate new terrain even while
     the bars are hidden
 -   Generated terrain scrolls from right to left
+-   Subtle perspective grains inside the ground reinforce depth without changing the sound-generated terrain itself: 14 restrained particles (6 small / 5 medium / 3 large) move faster toward the foreground; daytime grains are black and nighttime grains are dark navy
 -   Audio activity also influences the pace of the world
 -   Quiet periods fall back smoothly to an idle running pace
 
@@ -124,9 +125,8 @@ firmware.
 
 -   **J (manual jump)**: a very small 8-bit jump chirp. Terrain-triggered
     automatic jumps remain silent.
--   **Special shooting star**: a short sparkling trail sound while the
-    star is moving.
--   **UFO flight**: a low retro pulse while the UFO enters or leaves.
+-   **Special shooting star**: a bright synthetic **"KIRAAN"** onset followed by a quieter sparkling tail, lasting about **2.43 seconds**. The sound continues independently after the visible shooting-star streak has faded.
+-   **UFO flight**: a fast retro square-wave sweep (about 5.26 Hz, 640–1400 Hz) while the UFO enters, leaves, or returns.
 -   **UFO beam**: a very quiet rising electronic beam sound.
 -   **UFO abduction**: a short synthetic "Aaa!" when the runner begins to
     rise into the beam.
@@ -165,8 +165,7 @@ SOUND TERRARIUM sky.
 
 It is a small moment at the end of the week --- a time to look back on
 the week that has passed and make a wish for the week ahead. No message
-appears on the screen. When sound effects are enabled, a small sparkling
-effect follows the shooting star while it crosses the sky. If the weather
+appears on the screen. When sound effects are enabled, a bright synthetic chime is followed by a quieter sparkling tail; the sound lasts about 2.43 seconds and continues briefly after the visible streak has faded. If the weather
 is clear or cloudy, the weekly star appears; in rain, snow, or thunder,
 that week's automatic star remains unseen.
 
@@ -419,7 +418,7 @@ electronic entertainment:
 -   classic graphic equalizers
 -   arcade games
 -   early computer graphics
--   warm sand-colored daytime terrain and primary-blue nighttime terrain
+-   warm sand-colored daytime terrain and primary-blue nighttime terrain, with sparse moving ground grains that create restrained foreground/background parallax
 -   retro night skies with mostly white stars, sparse blue/red/yellow
     stars, and a few independently twinkling points
 -   simple pixel-like character animation
@@ -543,44 +542,42 @@ hardware with **M5Launcher 2.9.1**, including launch, microphone input,
 Wi-Fi setup, saved Wi-Fi reconnection, and the temperature-responsive
 runner.
 
-**SOUND TERRARIUM v108ck is the current Cardputer ADV source candidate.**
-It retains the v108ca meteor behavior and adds compact generated event
-sound effects, **X (SFX ON/OFF)**, an SFX status indicator in the
-Information overlay, full-duplex direct I2S audio, and a dedicated SFX TX
-task. To recover flash headroom with the current libraries, the central
-FreeSansBold display uses the 9pt font table with scaling instead of
-linking separate 12pt and 18pt tables.
+**SOUND TERRARIUM v108cm is the current Cardputer ADV source candidate.**
+It retains the v108ck full-duplex event-SFX system and adds three restrained
+refinements:
 
-Since the sound effects were first added, several real-device fixes were
-needed before the audio system worked correctly: the speaker and
-microphone now run together reliably (both were briefly broken at
-different points while this was worked out), short sound effects stop
-cleanly instead of lingering past their intended length, and the
-shooting-star sound was reworked from a repeated sweep --- which turned
-out to sound like a bird call --- into a set of short, irregular sparkle
-pings. The speaker + microphone + SFX system as a whole has been
-confirmed working together on real Cardputer ADV hardware. The current
-shooting-star sound specifically has been checked with an offline audio
-render of the exact same synthesis code, but not yet heard on-device;
-this note will be removed once that's confirmed.
+-   **Ground perspective grains:** 14 sparse particles inside the terrain
+    (6 small / 5 medium / 3 large) use 1 / 2 / 3 px sizes and move at
+    approximately 1.0× / 1.7× / 2.7× the terrain scroll rate. A clear band
+    immediately below the surface keeps the distant horizon uncluttered.
+    The grains are black by day and dark navy by night.
+-   **Refined shooting-star sound:** the previous irregular sparkle pings are
+    replaced by a roughly 2.43-second synthesized **"KIRAAN" → quieter
+    sparkle** effect. On Cardputer ADV, the visible streak still ends after
+    about 900 ms while the SFX runs on its own independent timer.
+-   **Refined UFO flight sound:** the previous low two-tone pulse is replaced
+    by a faster retro square-wave sweep (about 5.26 Hz, 640–1400 Hz) inspired
+    by late-1970s arcade flying-saucer sounds. Beam and abduction SFX remain
+    separate.
+
+The event sounds remain generated in real time; no WAV or MP3 assets are
+stored in the firmware. Existing jump, beam and abduction SFX behavior is unchanged, as are the
+Sunday 9 PM weather gate and the separate major meteor-shower events.
 
 For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current
 release fits the default 1.2 MB APP partition used by the Cardputer ADV
 build.
 
-The last confirmed compile result, from the v108ce milestone before the
-v108cf--v108ck audio fixes above, was:
+The v108cm candidate has been compiled successfully with **M5Stack ESP32
+BSP 3.3.9**:
 
--   Flash: **1,304,019 / 1,310,720 bytes (99%)** (v108ce)
--   Free flash space: **6,701 bytes** (v108ce)
--   Global RAM: **54,972 / 327,680 bytes (16%)** (v108ce)
--   Available for local variables: **272,708 bytes** (v108ce)
+-   Flash: **1,305,283 / 1,310,720 bytes (99%)**
+-   Free flash space: **5,437 bytes**
+-   Global RAM: **55,228 / 327,680 bytes (16%)**
+-   Available for local variables: **272,452 bytes**
 
-**v108ck build size: pending current compile measurement.** The v108cf--v108ck
-changes are small (a handful of register values, a few lookup tables, no
-new libraries), so flash usage is not expected to move far from the
-figures above, but that has not been measured yet and should not be
-quoted as the current number.
+Flash headroom is therefore extremely limited; these figures should be
+rechecked whenever code or libraries change.
 
 ### Arduino IDE / source code
 
@@ -593,8 +590,7 @@ For manual installation, development, or modification:
     within the default **1.2 MB APP** partition in the development
     environment used for this release.
 
-The v108ck source was built in the same environment used for the v108ce
-milestone above: **M5Stack ESP32 BSP 3.3.9**, **M5GFX 0.2.29**, and
+The v108cm source candidate was built with: **M5Stack ESP32 BSP 3.3.9**, **M5GFX 0.2.29**, and
 **M5Unified 0.2.22**. The Arduino and ESP32 components used by the sketch
 are listed in the [Software / services](#software--services) section
 above.
