@@ -34,8 +34,7 @@ Cardputer ADV**.
 
 Set a city anywhere in the world, and SOUND TERRARIUM brings its present
 moment into the tiny screen --- local time, current weather, temperature
-and humidity, atmospheric pressure, precipitation probability, battery
-status, sunrise and sunset, moonrise and moonset, tide information,
+and humidity, atmospheric pressure, precipitation probability, sunrise and sunset, moonrise and moonset, tide information,
 lunar phase, a reference step count from the built-in BMI270 IMU, and
 the changing light from day through twilight into night.
 
@@ -137,7 +136,32 @@ world rather than becoming loud alerts.
 
 Press **X** to toggle all event sound effects. The current **SFX ON / SFX
 OFF** state is shown at the lower-right of the **I (Information)** overlay,
-next to the battery area.
+in the lower-right information area.
+
+### Built-in metronome
+
+The previous battery display has been retired. On the Cardputer ADV, its
+reading was not accurate enough to be genuinely useful, so the display area
+and associated firmware code were repurposed for a feature that fits SOUND
+TERRARIUM's sound-driven world more naturally: a **built-in metronome**.
+
+- **B** — metronome ON / OFF
+- **← / →** — −1 / +1 BPM
+- **Hold ← / →** — continuous 1-BPM adjustment
+- **↓ / ↑** — metronome volume −10 / +10
+- Default: **120 BPM**, **80% volume**
+- Range: **40–200 BPM**, **20–100% volume**
+
+While active, the BPM is shown at a fixed lower-right position. Changing
+volume temporarily replaces it with a display such as **80% VOL**, then the
+BPM returns. The readout disappears when the metronome is stopped and stays
+in the same position whether the **I (Information)** overlay is visible or
+hidden.
+
+The metronome is independent of the **X** event-SFX toggle and continues
+through UFO and other event sounds. Its physical click is also available to
+the microphone/audio-analysis path, allowing the beat itself to shape the
+terrain.
 
 ### A sky connected to the real world
 
@@ -230,8 +254,7 @@ More detailed environmental information is treated as auxiliary data:
 probability provided by Open-Meteo for the configured location),
 **TEMP/HUM**, daily **SUN/MOON rise/set schedules**, **HIGH/LOW tide
 times**, current **TIDE UP / TIDE DN** direction, **STEP**, the saved
-**LOCATION**, current **AP / Wi-Fi status**, battery level (**BAT**),
-current **SFX ON/OFF** state, and the visible **8-band EQ**. These are hidden by default to keep the
+**LOCATION**, current **AP / Wi-Fi status**, current **SFX ON/OFF** state, and the visible **8-band EQ**. These are hidden by default to keep the
 240 × 135 world unobstructed and can be shown or hidden together with
 the **I (Information)** key. **I is independent of T**, so auxiliary
 information can remain visible even when the normal date/clock/weather
@@ -242,8 +265,7 @@ left/right and front/back angle diagnostics are no longer drawn on the
 normal scene. When auxiliary information is shown, **HIGH** and **LOW**
 tide times are stacked beneath the SUN/MOON information with a compact
 blue three-line wave symbol. At the bottom-left, **STEP** appears above
-**AP / Wi-Fi status**, with **LOCATION** below it. At the lower-right,
-**BAT** appears below the EQ, with **SFX ON/OFF** aligned to the right edge. The EQ is visible only while **I** is on,
+**AP / Wi-Fi status**, with **LOCATION** below it. At the lower-right, **SFX ON/OFF** remains aligned to the right edge. When the metronome is active, its BPM/VOL readout uses a fixed position independent of the **I** overlay. The EQ is visible only while **I** is on,
 but its audio analysis continues unchanged while hidden, so the
 sound-generated terrain never stops responding.
 
@@ -306,8 +328,11 @@ fallback operation where possible.
   **U**   UFO event
   **M**   Meteor
   **X**   Toggle event sound effects (SFX ON / OFF)
+  **B**   Toggle built-in metronome ON / OFF
+  **← / →**   Metronome −1 / +1 BPM; hold for continuous adjustment
+  **↓ / ↑**   Metronome volume −10 / +10
   **T**   Show / hide date, weekday, clock and weather
-  **I**   Show / hide detailed information and EQ (SUN/MOON R/S, tide, TEMP/HUM, PRES/RAIN, STEP, AP/LOCATION, BAT, SFX state and 8-band EQ)
+  **I**   Show / hide detailed information and EQ (SUN/MOON R/S, tide, TEMP/HUM, PRES/RAIN, STEP, AP/LOCATION, SFX state and 8-band EQ)
   **C**   Hold for 3 seconds to reset STEP to 0
   **S**   Open Wi-Fi SETUP
 
@@ -389,16 +414,16 @@ Because the browser version is intended as an easy way to try SOUND
 TERRARIUM, its interface and instructions are written in **English** for
 worldwide use. Because a browser has neither the Cardputer ADV's BMI270
 step counter nor its Wi-Fi access-point state, the browser scene shows
-**STEP xxxx**, **AP: BROWSER**, and **BAT OK** as browser-only placeholders
+**STEP xxxx** and **AP: BROWSER** as browser-only placeholders
 rather than inventing values. **Detailed information and the visible EQ
 are hidden by default** so they do not cover the generated terrain.
 Press **I (Information)** to show or hide SUN/MOON, tide, TEMP/HUM,
-PRES/RAIN, STEP/AP/LOCATION, BAT, SFX state, and the 8-band EQ. The EQ continues to
+PRES/RAIN, STEP/AP/LOCATION, SFX state, and the 8-band EQ. The EQ continues to
 drive the terrain while its bars are hidden. When shown, **LOCATION
 appears at the bottom-left** of the browser scene. As on the Cardputer
 build, **T and I are independent**: T controls the normal
 date/weekday/time/weather overlay, while I controls SUN/MOON, tide,
-TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, BAT, SFX state, and the visible EQ. **STEP
+TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, SFX state, and the visible EQ. **STEP
 is Cardputer-ADV-only** because it uses the device's physical BMI270
 IMU; the browser version does not simulate a step count. Browser
 geolocation requires permission and may be unavailable in some
@@ -542,42 +567,46 @@ hardware with **M5Launcher 2.9.1**, including launch, microphone input,
 Wi-Fi setup, saved Wi-Fi reconnection, and the temperature-responsive
 runner.
 
-**SOUND TERRARIUM v108cm is the current Cardputer ADV source candidate.**
-It retains the v108ck full-duplex event-SFX system and adds three restrained
-refinements:
+**SOUND TERRARIUM v108cr is the current Cardputer ADV source candidate.**
 
--   **Ground perspective grains:** 14 sparse particles inside the terrain
-    (6 small / 5 medium / 3 large) use 1 / 2 / 3 px sizes and move at
-    approximately 1.0× / 1.7× / 2.7× the terrain scroll rate. A clear band
-    immediately below the surface keeps the distant horizon uncluttered.
-    The grains are black by day and dark navy by night.
--   **Refined shooting-star sound:** the previous irregular sparkle pings are
-    replaced by a roughly 2.43-second synthesized **"KIRAAN" → quieter
-    sparkle** effect. On Cardputer ADV, the visible streak still ends after
-    about 900 ms while the SFX runs on its own independent timer.
--   **Refined UFO flight sound:** the previous low two-tone pulse is replaced
-    by a faster retro square-wave sweep (about 5.26 Hz, 640–1400 Hz) inspired
-    by late-1970s arcade flying-saucer sounds. Beam and abduction SFX remain
-    separate.
+The main change in v108cr is the replacement of the former battery display
+with the built-in metronome. The battery indication was removed because it
+was not accurate enough to be genuinely useful on the Cardputer ADV. The
+freed display area and firmware space are now used for a sound-related
+function that can directly participate in the terrarium.
+
+The v108cr candidate retains the v108cm ground perspective, refined
+shooting-star synthesis and retro UFO-flight sound, and adds:
+
+- **Built-in metronome:** B toggles it ON/OFF; default 120 BPM.
+- **Precise tempo control:** ← / → change by 1 BPM; holding either key
+  continuously repeats the 1-BPM adjustment.
+- **Volume control:** ↓ / ↑ change metronome volume by 10%.
+- **Fixed status display:** BPM appears only while the metronome is active.
+  Volume changes temporarily show e.g. **80% VOL** in the same fixed position.
+  The position does not move when **I** toggles the Information overlay.
+- **SFX coexistence:** the metronome continues while UFO and other event SFX
+  are playing; **X** controls event SFX independently.
+- **Battery display removed:** battery-display code and the on-screen BAT
+  indicator are no longer part of the current build.
 
 The event sounds remain generated in real time; no WAV or MP3 assets are
-stored in the firmware. Existing jump, beam and abduction SFX behavior is unchanged, as are the
-Sunday 9 PM weather gate and the separate major meteor-shower events.
+stored in the firmware. The Sunday 9 PM weather gate and separate major
+meteor-shower events are unchanged.
 
-For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current
-release fits the default 1.2 MB APP partition used by the Cardputer ADV
-build.
+For M5Burner, search for `SOUND TERRARIUM` on Cardputer. The current release
+fits the default 1.2 MB APP partition used by the Cardputer ADV build.
 
-The v108cm candidate has been compiled successfully with **M5Stack ESP32
-BSP 3.3.9**:
+The v108cr candidate has been compiled successfully with **M5Stack ESP32 BSP
+3.3.9**:
 
--   Flash: **1,305,283 / 1,310,720 bytes (99%)**
--   Free flash space: **5,437 bytes**
--   Global RAM: **55,228 / 327,680 bytes (16%)**
--   Available for local variables: **272,452 bytes**
+- Flash: **1,300,975 / 1,310,720 bytes (99%)**
+- Free flash space: **9,745 bytes**
+- Global RAM: **55,172 / 327,680 bytes (16%)**
+- Available for local variables: **272,508 bytes**
 
-Flash headroom is therefore extremely limited; these figures should be
-rechecked whenever code or libraries change.
+Flash headroom remains extremely limited; these figures should be rechecked
+whenever code or libraries change.
 
 ### Arduino IDE / source code
 
@@ -590,7 +619,7 @@ For manual installation, development, or modification:
     within the default **1.2 MB APP** partition in the development
     environment used for this release.
 
-The v108cm source candidate was built with: **M5Stack ESP32 BSP 3.3.9**, **M5GFX 0.2.29**, and
+The v108cr source candidate was built with: **M5Stack ESP32 BSP 3.3.9**, **M5GFX 0.2.29**, and
 **M5Unified 0.2.22**. The Arduino and ESP32 components used by the sketch
 are listed in the [Software / services](#software--services) section
 above.
@@ -643,7 +672,7 @@ testing on the M5Stack Cardputer ADV.
 The present source candidate includes the audio-generated terrain
 system, runner animations, IMU interaction, BMI270 reference step
 counting, real-world weather, tide and celestial display, scheduled
-events, generated event sound effects with X-controlled SFX state,
+events, generated event sound effects with X-controlled SFX state, the built-in metronome,
 offline fallback, worldwide city-based location selection, and
 browser-based multi-network Wi-Fi setup.
 

@@ -1,3 +1,6 @@
+// v108cr: finalize built-in metronome: B toggle, fixed BPM/VOL status, L/R +/-1 BPM with long-hold repeat, D/U volume.
+// v108cq: keep metronome status fixed at the former battery/status position regardless of I; enlarge/bold BPM digits.
+// v108co: refine metronome: BPM shown only while active; L/R +/-1 BPM; D/U volume; louder click mixed over event SFX.
 // v108cm: UFO flight SFX changed to approved Space-Invaders-style fast VCO warble; no other behavior changed.
 // v108cf: route mono SFX to BOTH I2S TX slots for ES8311 speaker compatibility; mic RX remains LEFT.
 // v108cg: ES8311 REG01 (CLOCK_MANAGER) 0xBA->0xB5, matching M5Unified's official
@@ -95,6 +98,7 @@
     - song tempo controls terrain/runner scroll speed
     - silence falls back smoothly to a 60 BPM idle run
     - J jumps; W waves; U summons the UFO; T toggles clock/ephemeris overlay
+    - B toggles metronome; while active: L/R adjust BPM +/-1 (hold to repeat), D/U adjust volume -/+10
     - spectrum analysis follows HTML: 80-1800 Hz
     - quiet baseline stays in cyan/blue area
     - adaptive centroid window expands Cardputer mic motion to HTML-like amplitude
@@ -243,6 +247,25 @@ static float worldSpeedPxPerSec = IDLE_BPM;
 static float scrollAccumulator = 0.0f;
 static uint32_t lastWorldMs = 0;
 
+// User metronome. B toggles it; printed cursor keys adjust tempo while active.
+// The click is emitted through the real speaker so the existing microphone /
+// audio-analysis path can hear it and shape the terrain naturally.
+static constexpr int METRONOME_BPM_MIN = 40;
+static constexpr int METRONOME_BPM_MAX = 200;
+static constexpr int METRONOME_BPM_DEFAULT = 120;
+static volatile bool metronomeEnabled = false;
+static volatile int metronomeBpm = METRONOME_BPM_DEFAULT;
+static volatile uint32_t metronomeClickStartMs = 0;
+static uint32_t metronomeLastBeatMs = 0;
+
+// Kept as a separate 0..100 setting so a future UI can expose metronome
+// volume without changing the timing/audio architecture. No user control yet.
+static constexpr int METRONOME_VOL_MIN = 20;
+static constexpr int METRONOME_VOL_MAX = 100;
+static constexpr int METRONOME_VOL_STEP = 10;
+static volatile uint8_t metronomeVolume = 80;
+static volatile uint32_t metronomeVolumeDisplayUntilMs = 0;
+
 // v91: right-side 8-band EQ is now the visible terrain generator.
 // Its 54 px zone is sampled into a smooth spatial road profile and that
 // completed profile is released leftward as the world scrolls.
@@ -255,6 +278,15 @@ static constexpr float EQ_TERRAIN_VALLEY_Y = 116.0f;
 
 // ADV keyboard state.
 static bool advKeyboardReady = false;
+
+// Metronome LEFT/RIGHT hold-repeat state. A short press still changes exactly
+// 1 BPM; holding starts repeating after a brief delay, then advances quickly
+// in 1 BPM steps until release. UP/DOWN volume controls remain press-only.
+static int8_t metronomeBpmHoldDir = 0;
+static uint32_t metronomeBpmHoldStartMs = 0;
+static uint32_t metronomeBpmLastRepeatMs = 0;
+static constexpr uint32_t METRONOME_BPM_HOLD_DELAY_MS = 450;
+static constexpr uint32_t METRONOME_BPM_REPEAT_MS = 80;
 void startUfoShift();
 uint16_t skyColorForTime(const tm &t);
 
@@ -453,7 +485,7 @@ static bool lunarScheduleValid = false;
 // T toggles only the date/time/weather block. Networking, NTP, weather and
 // celestial calculations continue normally while the text is hidden.
 static bool showClockInfo = true;
-static bool showAuxInfo = false; // I: all auxiliary info (ephemeris/weather/AP/location/STEP/BAT); hidden by default
+static bool showAuxInfo = false; // I: auxiliary info (ephemeris/weather/AP/location/STEP/SFX); hidden by default
 
 static uint32_t lastTideAttemptMs = 0;
 static constexpr uint32_t TIDE_REFRESH_MS = 6UL*60UL*60UL*1000UL;
@@ -470,6 +502,7 @@ static i2s_chan_handle_t spkChan = nullptr;
 static volatile bool sfxEnabled=true;
 static volatile uint32_t jumpSfxStartMs=0, abductSfxStartMs=0;
 static uint32_t sfxPhase1=0, sfxPhase2=0, sfxPhase3=0;
+static uint32_t metronomeSfxPhase = 0; // dedicated phase: never shared with event SFX
 static int16_t sfxBuf[128];
 
 // Shooting-star SFX: compact additive reconstruction of the supplied
@@ -1386,6 +1419,47 @@ static bool initBruceADVMicrophone(){
   return true;
 }
 
+// ---------------- Metronome ----------------
+static void serviceMetronome(){
+  if(!metronomeEnabled) return;
+
+  const uint32_t now=millis();
+  const int bpm=constrain((int)metronomeBpm,METRONOME_BPM_MIN,METRONOME_BPM_MAX);
+  const uint32_t intervalMs=60000UL/(uint32_t)bpm;
+
+  // Fire immediately on entry, then keep a stable non-blocking cadence.
+  if(metronomeLastBeatMs==0 || (uint32_t)(now-metronomeLastBeatMs)>=intervalMs){
+    metronomeLastBeatMs=now;
+    metronomeClickStartMs=now;
+  }
+}
+
+static void setMetronomeEnabled(bool on){
+  metronomeEnabled=on;
+  metronomeClickStartMs=0;
+  metronomeLastBeatMs=0;
+  metronomeBpmHoldDir=0;
+  metronomeBpmHoldStartMs=0;
+  metronomeBpmLastRepeatMs=0;
+}
+
+static void adjustMetronomeBpm(int delta){
+  int v=constrain((int)metronomeBpm+delta,METRONOME_BPM_MIN,METRONOME_BPM_MAX);
+  if(v==(int)metronomeBpm) return;
+  metronomeBpm=v;
+  // Restart the interval from the adjustment so tempo changes feel immediate
+  // and never produce an accidental double-click.
+  metronomeClickStartMs=0;
+  metronomeLastBeatMs=millis();
+}
+
+static void adjustMetronomeVolume(int delta){
+  int v=constrain((int)metronomeVolume+delta,METRONOME_VOL_MIN,METRONOME_VOL_MAX);
+  if(v==(int)metronomeVolume) return;
+  metronomeVolume=(uint8_t)v;
+  metronomeVolumeDisplayUntilMs=millis()+1400;
+}
+
 // ---------------- ADV cursor keys ----------------
 static bool tcaWrite(uint8_t reg, uint8_t value){
   Wire1.beginTransmission(TCA8418_ADDR);
@@ -1436,6 +1510,15 @@ static void mapTcaRawToPhysical(uint8_t keyvalue,uint8_t &row,uint8_t &col){
     row=0xFF;
     col=0xFF;
   }
+}
+
+static void serviceMetronomeBpmHold(){
+  if(!metronomeEnabled || metronomeBpmHoldDir==0) return;
+  const uint32_t now=millis();
+  if((uint32_t)(now-metronomeBpmHoldStartMs)<METRONOME_BPM_HOLD_DELAY_MS) return;
+  if((uint32_t)(now-metronomeBpmLastRepeatMs)<METRONOME_BPM_REPEAT_MS) return;
+  metronomeBpmLastRepeatMs=now;
+  adjustMetronomeBpm(metronomeBpmHoldDir);
 }
 
 static void pollAdvCursorKeys(){
@@ -1489,13 +1572,42 @@ static void pollAdvCursorKeys(){
       continue;
     }
 
-    if(!pressed) continue;
+    // LEFT/RIGHT release terminates BPM auto-repeat. Other release events
+    // remain ignored here (C is handled above).
+    if(!pressed){
+      if((row==3 && col==10 && metronomeBpmHoldDir<0) ||
+         (row==3 && col==12 && metronomeBpmHoldDir>0)){
+        metronomeBpmHoldDir=0;
+        metronomeBpmHoldStartMs=0;
+        metronomeBpmLastRepeatMs=0;
+      }
+      continue;
+    }
 
     // Physical keys on Cardputer ADV (zero-based physical row/column):
     // ';' / UP marking = row 2, col 11
     // '.' / DOWN marking = row 3, col 11
     // QWERTY mapping: W/T/U/I on row 1; J/S on row 2; X on row 3,col4.
-    if(row==2 && col==8){
+    // Metronome controls use the ADV's printed cursor keys only while B mode
+    // is active: LEFT/RIGHT = -/+1 BPM, DOWN/UP = volume -/+10.
+    if(metronomeEnabled && row==3 && col==10){
+      adjustMetronomeBpm(-1);
+      metronomeBpmHoldDir=-1;
+      metronomeBpmHoldStartMs=millis();
+      metronomeBpmLastRepeatMs=metronomeBpmHoldStartMs;
+    }else if(metronomeEnabled && row==3 && col==12){
+      adjustMetronomeBpm(+1);
+      metronomeBpmHoldDir=+1;
+      metronomeBpmHoldStartMs=millis();
+      metronomeBpmLastRepeatMs=metronomeBpmHoldStartMs;
+    }else if(metronomeEnabled && row==3 && col==11){
+      adjustMetronomeVolume(-METRONOME_VOL_STEP);
+    }else if(metronomeEnabled && row==2 && col==11){
+      adjustMetronomeVolume(+METRONOME_VOL_STEP);
+    }else if(row==3 && col==7){
+      // B = metronome ON/OFF.
+      setMetronomeEnabled(!metronomeEnabled);
+    }else if(row==2 && col==8){
       if(!ufo.active && runner.state==RS_RUN){
         runner.state=RS_JUMP;
         runner.stateT=0;
@@ -1567,7 +1679,12 @@ static bool serviceSfx(){
     else if(specialStarSfxTriggerMs && (age=now-specialStarSfxTriggerMs)<2430) fx=2;
     else if(jumpSfxStartMs && (age=now-jumpSfxStartMs)<200) fx=1;
   }
-  if(!fx){
+  // Metronome is independent of X and is mixed on top of event SFX, so UFO,
+  // beam, meteor, jump, etc. never suppress the beat.
+  uint32_t metroAge=0;
+  const bool metroClickActive = metronomeEnabled && metronomeClickStartMs &&
+                                (metroAge=now-metronomeClickStartMs)<55;
+  if(!fx && !metroClickActive){
     if(!sounding) return false;
     sounding=false;
     // v108ci: flush enough silence to fully drain the DMA ring
@@ -1616,6 +1733,14 @@ static bool serviceSfx(){
       }
       if(mix>32767) mix=32767;
       if(mix<-32768) mix=-32768;
+      if(metroClickActive){
+        const uint32_t p=metroAge<54?metroAge:54;
+        const int peak=(1800*(int)metronomeVolume)/100;
+        const int env=(peak*(int)(55-p))/55;
+        mix += sfxSquare(metronomeSfxPhase,1500,env);
+      }
+      if(mix>32767) mix=32767;
+      if(mix<-32768) mix=-32768;
       sfxBuf[i]=(int16_t)mix;
       continue;
     }
@@ -1628,14 +1753,43 @@ static bool serviceSfx(){
       amp=450;
     }
     else if(fx==4){ uint32_t p=age%800; hz=760+(21*p)/16; amp=220; }
+    else if(fx==0){
+      // No event SFX. Start from silence; metronome is mixed below.
+      sfxBuf[i]=0;
+      if(metroClickActive){
+        const uint32_t p=metroAge<54?metroAge:54;
+        const int peak=(1800*(int)metronomeVolume)/100;
+        const int env=(peak*(int)(55-p))/55;
+        sfxBuf[i]=sfxSquare(sfxPhase1,1500,env);
+      }
+      continue;
+    }
     else{
       uint32_t p=age<859?age:859;
       hz=212+(p<430?(12*p)/430:12-(8*(p-430))/430);
       int e=p<650?500:(500*(860-p))/210;
       int32_t v=3*sfxSquare(sfxPhase1,hz,e)+sfxSquare(sfxPhase2,720,e/2)+sfxSquare(sfxPhase3,1120,e/3);
-      sfxBuf[i]=(int16_t)(v>>2); continue;
+      int32_t mix=(v>>2);
+      if(metroClickActive){
+        const uint32_t mp=metroAge<54?metroAge:54;
+        const int peak=(1800*(int)metronomeVolume)/100;
+        const int menv=(peak*(int)(55-mp))/55;
+        mix += sfxSquare(metronomeSfxPhase,1500,menv);
+      }
+      if(mix>32767) mix=32767;
+      if(mix<-32768) mix=-32768;
+      sfxBuf[i]=(int16_t)mix; continue;
     }
-    sfxBuf[i]=sfxSquare(sfxPhase1,hz,amp);
+    int32_t sample=sfxSquare(sfxPhase1,hz,amp);
+    if(metroClickActive){
+      const uint32_t p=metroAge<54?metroAge:54;
+      const int peak=(1800*(int)metronomeVolume)/100;
+      const int env=(peak*(int)(55-p))/55;
+      sample += sfxSquare(metronomeSfxPhase,1500,env);
+    }
+    if(sample>32767) sample=32767;
+    if(sample<-32768) sample=-32768;
+    sfxBuf[i]=(int16_t)sample;
   }
   size_t wr;
   i2s_channel_write(spkChan,sfxBuf,sizeof(sfxBuf),&wr,portMAX_DELAY);
@@ -3152,82 +3306,11 @@ static void clockRetroPalette(const struct tm &t,
   weatherColor= lerpRgb565(255, 79,216, 144,  0, 88,d);
 }
 
-// Cardputer ADV battery detect is GPIO10 through a 1:2 divider.
-// Do not present an unreliable percentage.  Instead expose three practical
-// states whose thresholds are deliberately conservative:
-//   OK   : normal operation
-//   LOW  : charge soon
-//   CRIT : charge now
-//
-// The raw thresholds below preserve the existing v108bs ADC scale
-// (raw 1689 ~= 3.30 V, raw 2150 ~= 4.20 V).  They are therefore initial
-// safety-oriented thresholds, not calibrated SOC measurements.
-enum BatteryState : uint8_t { BAT_OK=0, BAT_LOW=1, BAT_CRIT=2 };
-static BatteryState batteryState=BAT_OK;
-static uint32_t batteryLastSampleMs=0;
-static uint8_t batteryRecoveryCount=0;
-
-static constexpr uint32_t BAT_SAMPLE_INTERVAL_MS=5000UL;
-static constexpr int BAT_SAMPLE_COUNT=12;
-static constexpr int BAT_LOW_ENTER_RAW =1843; // ~3.60 V on the existing ADC scale
-static constexpr int BAT_LOW_EXIT_RAW  =1894; // ~3.70 V; 100 mV hysteresis
-static constexpr int BAT_CRIT_ENTER_RAW=1740; // ~3.40 V
-static constexpr int BAT_CRIT_EXIT_RAW =1791; // ~3.50 V; 100 mV hysteresis
-static constexpr uint8_t BAT_RECOVERY_CYCLES=3;
-
-static int readBatteryRawAverage(){
-  uint32_t sum=0;
-  for(int i=0;i<BAT_SAMPLE_COUNT;i++) sum+=(uint32_t)analogRead(10);
-  return (int)(sum/BAT_SAMPLE_COUNT);
-}
-
-static void serviceBatteryMonitor(){
-  uint32_t now=millis();
-  if(batteryLastSampleMs!=0 && (uint32_t)(now-batteryLastSampleMs)<BAT_SAMPLE_INTERVAL_MS) return;
-  batteryLastSampleMs=now;
-
-  int raw=readBatteryRawAverage();
-  BatteryState next=batteryState;
-
-  // Dangerous transitions happen immediately. Recovery is intentionally
-  // slower so the label does not bounce around a threshold.
-  if(batteryState==BAT_OK){
-    if(raw<=BAT_CRIT_ENTER_RAW) next=BAT_CRIT;
-    else if(raw<=BAT_LOW_ENTER_RAW) next=BAT_LOW;
-  }else if(batteryState==BAT_LOW){
-    if(raw<=BAT_CRIT_ENTER_RAW){
-      next=BAT_CRIT;
-      batteryRecoveryCount=0;
-    }else if(raw>=BAT_LOW_EXIT_RAW){
-      if(++batteryRecoveryCount>=BAT_RECOVERY_CYCLES){
-        next=BAT_OK;
-        batteryRecoveryCount=0;
-      }
-    }else{
-      batteryRecoveryCount=0;
-    }
-  }else{ // BAT_CRIT
-    if(raw>=BAT_CRIT_EXIT_RAW){
-      if(++batteryRecoveryCount>=BAT_RECOVERY_CYCLES){
-        next=(raw>=BAT_LOW_EXIT_RAW)?BAT_OK:BAT_LOW;
-        batteryRecoveryCount=0;
-      }
-    }else{
-      batteryRecoveryCount=0;
-    }
-  }
-
-  if(next!=batteryState){
-    batteryState=next;
-    batteryRecoveryCount=0;
-  }
-}
-
 void drawClockInfoOverlay(){
   // T and I are deliberately independent:
   // T = normal clock/weather text (visible by default)
   // I = maintenance/auxiliary information (hidden by default)
-  if(!showClockInfo && !showAuxInfo && batteryState==BAT_OK) return;
+  if(!showClockInfo && !showAuxInfo && !metronomeEnabled) return;
 
   struct tm t;
   localNow(t);
@@ -3339,25 +3422,45 @@ void drawClockInfoOverlay(){
 
   }
 
-  // BAT OK remains auxiliary information. LOW/CRIT override I and stay
-  // visible so a charging warning cannot be hidden accidentally.
-  if(showAuxInfo || batteryState!=BAT_OK){
-    const char *batText=(batteryState==BAT_CRIT)?"BAT CRIT":
-                        (batteryState==BAT_LOW)?"BAT LOW":"BAT OK";
-    uint16_t batColor=ink;
-    if(batteryState==BAT_LOW) batColor=canvas.color565(255,140,0); // orange
-    else if(batteryState==BAT_CRIT) batColor=TFT_RED;
+  // Bottom-right status. The retired battery indicator stays gone.
+  // Metronome status has its own FIXED anchor: pressing I may hide/show the
+  // auxiliary layer, but must never move the BPM readout.  The anchor matches
+  // the old layout position immediately to the left of the SFX status.
+  // While changing volume, the same fixed slot temporarily shows VOL xx%.
+  {
     canvas.setFont(&fonts::Font0);
     canvas.setTextSize(1);
-    canvas.setTextColor(batColor);
+    canvas.setTextColor(ink);
+    const char *sx=sfxEnabled?"SFX ON":"SFX OFF";
+    const int metroRight=W-5-canvas.textWidth(sx);
+
     if(showAuxInfo){
-      const char *sx=sfxEnabled?"SFX ON":"SFX OFF";
       canvas.setTextDatum(bottom_right);
       canvas.drawString(sx,W-2,H-2);
-      canvas.drawString(batText,W-5-canvas.textWidth(sx),H-2);
-    }else{
-      canvas.setTextDatum(bottom_left);
-      canvas.drawString(batText,EQ_GEN_LEFT,H-2);
+    }
+
+    if(metronomeEnabled){
+      // Keep BPM and VOL visually identical: a moderately enlarged bold value
+      // at the same fixed anchor, followed by a small suffix.  Use the already
+      // linked FreeSansBold9pt font with fractional scaling to avoid pulling in
+      // another font table and wasting flash.
+      const bool showVol=(int32_t)(metronomeVolumeDisplayUntilMs-millis())>0;
+      char nb[8];
+      const char *suffix=showVol ? "% VOL" : "BPM";
+      if(showVol) snprintf(nb,sizeof(nb),"%u",(unsigned)metronomeVolume);
+      else snprintf(nb,sizeof(nb),"%d",(int)metronomeBpm);
+
+      canvas.setFont(&fonts::Font0);
+      canvas.setTextSize(1);
+      const int suffixW=canvas.textWidth(suffix);
+      canvas.setTextDatum(bottom_right);
+      canvas.drawString(suffix,metroRight,H-2);
+
+      canvas.setFont(&fonts::FreeSansBold9pt7b);
+      canvas.setTextSize(0.82f);
+      canvas.setTextDatum(bottom_right);
+      canvas.drawString(nb,metroRight-suffixW-2,H-1);
+      canvas.setTextSize(1);
     }
   }
 
@@ -4250,7 +4353,6 @@ void loop(){
   serviceWiFiRetryNonBlocking();
   updateAdvImu();
   serviceStepCounter();
-  serviceBatteryMonitor();
   updateOffscreenRunnerRescue();
   if(wifiSetupMode) wifiSetupServer.handleClient();
   // Keep network services alive after reset or a temporary Wi-Fi drop.
@@ -4285,8 +4387,10 @@ void loop(){
     lastEpochSaveMs=millis();
   }
 
+  serviceMetronome();
   analyzeAudio();
   pollAdvCursorKeys();
+  serviceMetronomeBpmHold();
   updateWorld();
   updateUfo();
 
