@@ -1,3 +1,4 @@
+// v108cs: add the approved subtle airplane: 10x5 px horizontal silhouette, dark gray by day / visible gray at night, one yellow tail blink, 2-3 daily passages.
 // v108cr: finalize built-in metronome: B toggle, fixed BPM/VOL status, L/R +/-1 BPM with long-hold repeat, D/U volume.
 // v108cq: keep metronome status fixed at the former battery/status position regardless of I; enlarge/bold BPM digits.
 // v108co: refine metronome: BPM shown only while active; L/R +/-1 BPM; D/U volume; louder click mixed over event SFX.
@@ -466,6 +467,26 @@ static int ephemerisDateKey = 0;
 static int specialStarFiredDateKey = 0;
 static volatile uint32_t specialStarTriggerMs = 0;
 static volatile uint32_t specialStarSfxTriggerMs = 0; // independent 2.43 s SFX clock
+
+
+// ---------------- Tiny ambient airplane (v108cs test) ----------------
+// Deliberately quiet scenery, not a game event. Two daily passages are
+// guaranteed (morning/evening); a third midday passage is deterministic
+// per local date. P is a temporary hidden manual test trigger.
+struct TinyPlaneState {
+  bool active=false;
+  int8_t dir=1;             // +1 = left->right, -1 = right->left
+  float x=-10.0f;
+  int16_t y=34;
+  uint32_t startedMs=0;
+  uint32_t durationMs=47000UL;
+};
+static TinyPlaneState tinyPlane;
+static void startTinyPlane(bool forceTest=false);  // forward declaration for P-key test handler
+static int tinyPlaneScheduleDateKey=0;
+static int tinyPlaneMinutes[3]={-1,-1,-1};
+static bool tinyPlaneFired[3]={false,false,false};
+
 
 bool weatherOK = false;
 
@@ -1524,6 +1545,8 @@ static void serviceMetronomeBpmHold(){
 static void pollAdvCursorKeys(){
   if(!advKeyboardReady) return;
 
+  static bool hiddenCtrlHeld=false;
+
   // Poll the FIFO directly. This avoids M5Cardputer.begin(), which would
   // re-own board peripherals while the current microphone path is working.
   int available=tcaRead(TCA_REG_KEY_LCK_EC);
@@ -1540,6 +1563,12 @@ static void pollAdvCursorKeys(){
 
     uint8_t row,col;
     mapTcaRawToPhysical(raw,row,col);
+
+    // Private maintenance chord state. Intentionally not exposed in UI/help.
+    if(row==3 && col==0){
+      hiddenCtrlHeld=pressed;
+      continue;
+    }
 
     // C key = physical row 3, col 3. Keep release events for the 3-second
     // STEP reset gesture; all other key actions remain press-only.
@@ -1590,7 +1619,9 @@ static void pollAdvCursorKeys(){
     // QWERTY mapping: W/T/U/I on row 1; J/S on row 2; X on row 3,col4.
     // Metronome controls use the ADV's printed cursor keys only while B mode
     // is active: LEFT/RIGHT = -/+1 BPM, DOWN/UP = volume -/+10.
-    if(metronomeEnabled && row==3 && col==10){
+    if(hiddenCtrlHeld && row==1 && col==10){
+      startTinyPlane(true);
+    }else if(metronomeEnabled && row==3 && col==10){
       adjustMetronomeBpm(-1);
       metronomeBpmHoldDir=-1;
       metronomeBpmHoldStartMs=millis();
@@ -3100,6 +3131,109 @@ const char* weatherLabel(){
   }
 }
 
+
+static uint32_t tinyPlaneHash(uint32_t x){
+  // Small deterministic integer hash: stable schedule for one local date,
+  // no NVS writes and no dependence on Arduino random state.
+  x ^= x >> 16;
+  x *= 0x7feb352dUL;
+  x ^= x >> 15;
+  x *= 0x846ca68bUL;
+  x ^= x >> 16;
+  return x;
+}
+
+static void prepareTinyPlaneSchedule(const tm &t){
+  const int dateKey=(t.tm_year+1900)*10000+(t.tm_mon+1)*100+t.tm_mday;
+  if(tinyPlaneScheduleDateKey==dateKey) return;
+  tinyPlaneScheduleDateKey=dateKey;
+
+  uint32_t h=tinyPlaneHash((uint32_t)dateKey);
+  // Morning 07:00-09:00 and evening 16:00-18:30.
+  tinyPlaneMinutes[0]=7*60 + (int)(h%121UL);
+  h=tinyPlaneHash(h+0x13579BDFUL);
+  tinyPlaneMinutes[1]=16*60 + (int)(h%151UL);
+  h=tinyPlaneHash(h+0x2468ACE1UL);
+  // About 55% of days also get one midday 11:00-15:00 passage.
+  tinyPlaneMinutes[2]=(h%100UL)<55UL ? 11*60+(int)((h/100UL)%241UL) : -1;
+
+  for(int i=0;i<3;i++) tinyPlaneFired[i]=false;
+}
+
+static void startTinyPlane(bool forceTest){
+  if(tinyPlane.active) return;
+  if(!forceTest &&
+     (weather.mode==WX_RAIN || weather.mode==WX_SNOW || weather.mode==WX_THUNDER)){
+    return;
+  }
+
+  struct tm t;
+  localNow(t);
+  uint32_t h=tinyPlaneHash((uint32_t)localDateKey() ^ millis());
+  tinyPlane.dir=(h&1U) ? 1 : -1;
+  tinyPlane.x=(tinyPlane.dir>0) ? -10.0f : (float)(W+10);
+  tinyPlane.y=20+(int)((h>>8)%35UL); // y = 20..54
+  tinyPlane.startedMs=millis();
+  tinyPlane.durationMs=40000UL+(uint32_t)((h>>16)%20001UL); // 40-60 s
+  tinyPlane.active=true;
+}
+
+static void serviceTinyPlane(){
+  struct tm t;
+  localNow(t);
+  prepareTinyPlaneSchedule(t);
+
+  const int nowMinute=minuteOfDay(t);
+  for(int i=0;i<3;i++){
+    if(tinyPlaneMinutes[i]>=0 && !tinyPlaneFired[i] && nowMinute==tinyPlaneMinutes[i]){
+      // Consume the day's slot even in bad weather: no delayed "event" later.
+      tinyPlaneFired[i]=true;
+      startTinyPlane(false);
+    }
+  }
+
+  if(!tinyPlane.active) return;
+  const uint32_t elapsed=millis()-tinyPlane.startedMs;
+  if(elapsed>=tinyPlane.durationMs){
+    tinyPlane.active=false;
+    return;
+  }
+
+  const float q=(float)elapsed/(float)tinyPlane.durationMs;
+  tinyPlane.x=(tinyPlane.dir>0)
+      ? (-10.0f + q*(float)(W+20))
+      : ((float)(W+10) - q*(float)(W+20));
+}
+
+static void drawTinyPlane(bool day){
+  if(!tinyPlane.active) return;
+
+  const int x=(int)lroundf(tinyPlane.x);
+  const int y=tinyPlane.y;
+  const int dir=tinyPlane.dir;
+
+  // 10x5 test silhouette: same restrained horizontal profile, slightly easier to see on-device.
+  // RGB565 approximations of #555b60 (day) and #777d84 (night).
+  const uint16_t body=day ? 0x52CC : 0x3186;
+
+  if(dir>0){
+    canvas.fillRect(x,   y+1,1,3,body); // vertical tail
+    canvas.fillRect(x+1, y+3,9,1,body); // horizontal fuselage through nose
+    canvas.fillRect(x+4, y,  2,3,body); // compact upper main wing
+    canvas.fillRect(x+4, y+4,2,1,body); // restrained lower main wing
+  }else{
+    canvas.fillRect(x+9, y+1,1,3,body); // vertical tail
+    canvas.fillRect(x,   y+3,9,1,body); // horizontal fuselage through nose
+    canvas.fillRect(x+4, y,  2,3,body); // compact upper main wing
+    canvas.fillRect(x+4, y+4,2,1,body); // restrained lower main wing
+  }
+
+  // Night only: ONE slowly blinking yellow pixel near the tail.
+  if(!day && ((millis()/650UL)&1U)==0U){
+    canvas.drawPixel(dir>0 ? x : x+9, y+1, 0xFFCF);
+  }
+}
+
 void drawWeatherAndClock(){
   struct tm t;
   localNow(t);
@@ -3244,6 +3378,9 @@ void drawWeatherAndClock(){
       canvas.drawPixel(x,y,TFT_WHITE);
     }
   }
+
+  // Tiny airplane sits behind foreground clouds but in front of celestial sky.
+  drawTinyPlane(day);
 
   // Weather sets the basic density; Open-Meteo cloud_cover fine-tunes it.
   int baseClouds =
@@ -4393,6 +4530,7 @@ void loop(){
   serviceMetronomeBpmHold();
   updateWorld();
   updateUfo();
+  serviceTinyPlane();
 
   // Weather refresh is deliberately sparse.
   if(wifiOK) fetchWeather();
